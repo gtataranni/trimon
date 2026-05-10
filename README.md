@@ -2,6 +2,9 @@
 
 **T**arget **R**eachability **I**nspection and **MON**itoring
 
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.22+-00ADD8.svg)](https://golang.org/)
+
 trimon is an open-source, push-based multi-protocol IP target monitoring daemon.
 It runs ICMP echo probes on a configurable schedule, streams results through a
 pluggable exporter pipeline, and exposes self-observability metrics in Prometheus
@@ -11,10 +14,18 @@ text format. The OTel SDK is wired in for future OTLP export.
 
 ## Quickstart
 
-TODO: under hot development
+### Local binary
 
+```bash
+make build
+sudo setcap cap_net_raw+ep ./bin/trimon   # grant raw socket capability
+./bin/trimon --config config.example.yaml
 ```
-make container
+
+### Container
+
+```bash
+make container   # builds with podman by default; pass CONTAINER_RUNTIME=docker to use docker
 
 podman run --rm \
   --name trimon \
@@ -26,13 +37,15 @@ podman run --rm \
 
 ---
 
-## CAP_NET_RAW
+## Requirements
+
+### CAP_NET_RAW
 
 ICMP probes require a raw IP socket. On Linux this means either:
 
 - running as `root`, or
 - granting `CAP_NET_RAW` to the binary: `sudo setcap cap_net_raw+ep ./bin/trimon`
-- passing `--cap-add NET_RAW` to `docker run`
+- passing `--cap-add NET_RAW` to `docker run` / `podman run`
 
 Without this capability, probes will report `status: error` with the message
 `"open raw socket (CAP_NET_RAW required): ..."`.
@@ -41,23 +54,28 @@ Without this capability, probes will report `status: error` with the message
 
 ## CLI flags
 
-TODO: under hot development
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config` | `trimon.yaml` | Path to the YAML config file |
+| `--log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| `--log-format` | `json` | Log format: `json`, `text` |
 
 ---
 
 ## Config reference
 
-See [config.example.yaml](config.example.yaml)
-
+See [config.example.yaml](config.example.yaml).
 
 ---
 
 ## HTTP endpoints
 
-| Path | Description |
-|------|-------------|
-| `GET /healthz` | Always returns `200 {"status":"ok"}` while the process runs |
-| `GET /metrics` | Prometheus text format, self-observability metrics |
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/healthz` | Returns `200 {"status":"ok"}` while the process is running |
+| `GET` | `/metrics` | Prometheus text format, self-observability metrics |
+| `GET` | `/config` | Active config as JSON (pass `Accept: application/x-yaml` for YAML) |
+| `POST` | `/reload` | Reload config from disk without restarting |
 
 ### Prometheus metrics
 
@@ -71,60 +89,25 @@ See [config.example.yaml](config.example.yaml)
 
 ---
 
-## Architecture
-
-Phase 1 architecture, subject to change.
-
-```
-                        ┌─────────────────────────────────────────┐
-                        │                  trimon                  │
-                        │                                          │
-  SIGHUP ──────────────▶│  config loader ─────────────────────┐   │
-  SIGTERM ─────────────▶│  signal handler                     │   │
-                        │          │                           │   │
-                        │          ▼                           │   │
-                        │  ┌──────────────┐                   │   │
-                        │  │  scheduler   │  one goroutine     │   │
-                        │  │  ┌────────┐  │  + ticker per     │   │
-                        │  │  │ prober │  │  prober            │   │
-                        │  │  │ (icmp) │  │                   │   │
-                        │  │  └────┬───┘  │                   │   │
-                        │  └───────┼──────┘                   │   │
-                        │          │ ProbeResult               │   │
-                        │          ▼                           │   │
-                        │  ┌──────────────┐  buffered(1000)   │   │
-                        │  │   pipeline   │◀──────────────────┘   │
-                        │  │  chan[1000]  │                        │
-                        │  └──────┬───────┘                        │
-                        │         │ fan-out                        │
-                        │    ┌────┴────┐                           │
-                        │    ▼         ▼                           │
-                        │  stdout   metrics                        │
-                        │ exporter  exporter                       │
-                        │ (JSON/txt) (Prometheus                   │
-                        │            counters)                     │
-                        │                      ┌──────────────┐   │
-                        │                      │  HTTP server │   │
-                        │                      │  /healthz    │   │
-                        │                      │  /metrics    │   │
-                        │                      └──────────────┘   │
-                        └─────────────────────────────────────────┘
-```
-
----
-
 ## Development
 
 ```bash
-make test    # run unit tests with race detector
-make lint    # run golangci-lint
-make build   # compile binary to ./bin/trimon
-make docker  # build container image
+make test      # run unit tests with race detector
+make lint      # run golangci-lint
+make build     # compile binary to ./bin/trimon
+make container # build container image (podman by default)
+```
+
+### Releasing
+
+```bash
+make release V=v0.1.0
+git push origin v0.1.0
 ```
 
 ### Adding a new probe type
 
-1. Create `internal/probe/<type>/<type>.go` implementing `probe.Probe`.
+1. Create `internal/probe/<type>/<type>.go` implementing `probe.Prober`.
 2. Add a case to the factory switch in `cmd/trimon/main.go`.
 3. Add the type name to `knownProbeTypes` in `internal/config/config.go`.
 
@@ -138,4 +121,4 @@ make docker  # build container image
 
 ## License
 
-See [LICENSE](LICENSE).
+[Apache 2.0](LICENSE)
