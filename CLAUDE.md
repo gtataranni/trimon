@@ -149,99 +149,14 @@ Probe results themselves go through the `Exporter` pipeline (stdout in v1), **no
 
 ---
 
-## Project phases
+## Project phases & roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full phase plan, per-phase checklists, and out-of-scope items.
 
 Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR.
-
-### Phase 1 — v0.1.0: ICMP + stdout (current)
-
-Goal: a runnable daemon that pings configured targets and emits NDJSON to stdout.
-
-- [x] Module scaffold, Makefile, golangci-lint config, Dockerfile
-- [x] `pkg/types` — `ProbeResult`, `ProbeConfig`, status constants
-- [x] `internal/config` — YAML loader + validator (unique names, valid targets, source_ip resolution)
-- [x] `internal/probe/probe.go` — `Probe` interface
-- [x] `internal/exporter/exporter.go` — `Exporter` interface
-- [x] `internal/probe/icmp` — raw ICMP, source_ip binding, count + timeout, RTT stats
-- [x] `internal/scheduler` — per-probe goroutine + ticker, start/stop/reload diff
-- [x] `internal/pipeline` — buffered fan-in channel, exporter fan-out
-- [x] `internal/exporter/stdout` — JSON (NDJSON) and text formats
-- [x] `internal/server` — `/healthz`, `/metrics` (self-observability)
-- [x] `cmd/trimon/main.go` — flags, wiring, ~~SIGHUP reload~~, SIGTERM graceful shutdown
-- [x] POST /reload for reload
-- [x] `config.example.yaml`, `README.md`
-
-**Done criteria:** `trimon --config config.example.yaml` pings 8.8.8.8 every 10s, prints NDJSON to stdout, `/healthz` returns 200, ~~tSIGHUP~~ `POST /reload` reloads config without dropping in-flight probes, `SIGTERM` drains and exits cleanly.
-
-### Phase 2 — v0.2.0: OTLP export
-
-Goal: ship to a real OTel Collector.
-
-- [ ] `internal/exporter/otlp` — gRPC and HTTP variants
-- [ ] OTel resource attributes (service.name, service.version, host.name)
-- [ ] Map `ProbeResult` → metric names defined in spec (`trimon.probe.duration`, `trimon.probe.rtt.min`, etc.)
-- [ ] Reorganise metrics, planning TBD
-- [ ] Configurable batching, retry, TLS
-- [ ] Multiple exporters can be enabled simultaneously (stdout + OTLP)
-- [ ] Integration test: run trimon against a local Collector in CI
-- [ ] simple MQTT exporter
-
-### Phase 3 - v0.3.0: Introduce target areas/groups
-
-Goal: introduce target area as a way to group multiple targets.
-An area can be "the internet", or "the web server subnet" or "the private DNS servers in Europe".
-The Area is considered reachable based on the probe result of all targets in the area.
-
-- [ ] Extend concept of target into target area, where an area can be defined by multiple ip4/6 addresses
-- [ ] Results are available per ip target but also by target area
-
-### Phase 4 — v0.4.0: Additional protocols
-
-Goal: trimon becomes genuinely multi-protocol.
-
-- [ ] TCP connect probe (`internal/probe/tcp`) — connect-time, source port label
-- [ ] UDP probe (`internal/probe/udp`) — send/recv with expected response patterns
-- [ ] DNS probe (`internal/probe/dns`) — A/AAAA/CNAME, resolver override, expected answer match
-- [ ] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
-- [ ] Per-protocol config schema additions, validated by the config loader
-
-### Phase 5 — v0.5.0: Operability and management API
-
-Goal: production-grade lifecycle and observability.
-
-- [ ] Hot-reload via HTTP API (`POST /-/reload`) in addition to SIGHUP
-- [ ] Config from a directory of files (merge), not just a single file
-- [ ] Probe-level enable/disable without restart
-- [ ] Per-probe rate limiting / global concurrency cap
-- [ ] Traces emitted for probe runs (OTel spans alongside metrics)
-- [ ] GET /api/probes/results — returns the last N results per probe as JSON
-- [ ] GET /api/probes, POST /api/probes, handle persisting config (validate → persist to YAML → reload scheduler)
-- [ ] DELETE /api/probes/{name}
-- [ ] PATCH /api/probes/{name} — modify probe interval/timeout/count
-
-### Phase 6 — v0.6.0: Path & advanced
-
-Goal: the things that needed everything else to be solid first.
-
-- [ ] Traceroute / path discovery probe (TBD)
-- [ ] MTR-style continuous path probing (TBD)
-- [ ] Path-change detection events (TBD)
-- [ ] Probe result history buffer for short retention without external storage
-
----
-
-## Explicitly out of scope (all phases)
-
-- Distributed/coordinated multi-instance deployment
-- Built-in alerting (handled by OTel/Prometheus consumers downstream)
-- Business-domain labels (customer, site, SLA tier — handled by downstream label enrichment)
-- Storage backend / time-series DB
-- Web UI
-
-If a request lands here, push back and explain why it belongs in the consumer side of the OTel stack, not in trimon.
 
 ## When in doubt
 
 1. Re-read the relevant interface in `internal/probe/probe.go` or `internal/exporter/exporter.go`.
-2. Check the current phase's checklist above — if the task isn't on it, it's probably out of scope for this iteration.
+2. Check the current phase's checklist in [ROADMAP.md](ROADMAP.md) — if the task isn't on it, it's probably out of scope for this iteration.
 3. Prefer adding a comment that states an assumption over asking; flag the assumption in the PR description and in the summary at the end of agent cycles.
