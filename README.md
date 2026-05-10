@@ -13,6 +13,16 @@ text format. The OTel SDK is wired in for future OTLP export.
 
 TODO: under hot development
 
+```
+make container
+
+podman run --rm \
+  --name trimon \
+  --cap-add NET_RAW \
+  -p 8080:8080 \
+  -v "$(pwd)/config.docker.yaml:/etc/trimon/config.yaml:ro" \
+  trimon:dev
+```
 
 ---
 

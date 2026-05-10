@@ -164,15 +164,12 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			return nil, fmt.Errorf("probe %q: %w", r.Name, err)
 		}
 
-		// source_ip: per-probe takes precedence, then global default, then fail.
+		// source_ip: per-probe takes precedence, then global default; empty = OS picks.
 		sourceIP := r.SourceIP
 		if sourceIP == "" {
 			sourceIP = global.SourceIP
 		}
-		if sourceIP == "" {
-			return nil, fmt.Errorf("probe %q: source_ip must be set on the probe or as global.source_ip", r.Name)
-		}
-		if net.ParseIP(sourceIP) == nil {
+		if sourceIP != "" && net.ParseIP(sourceIP) == nil {
 			return nil, fmt.Errorf("probe %q: source_ip %q is not a valid IP address", r.Name, sourceIP)
 		}
 

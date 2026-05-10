@@ -1,0 +1,30 @@
+global:
+  interval: 30s
+  timeout: 5s
+  count: 3
+  source_ip: ""   # empty = use the container's default interface
+
+exporters:
+  stdout:
+    enabled: true
+    format: json
+
+server:
+  listen: ":8080"
+
+probes:
+  - name: ping-google-dns
+    type: icmp
+    target: "8.8.8.8"
+    interval: 10s
+    timeout: 2s
+    count: 5
+    labels:
+      probe_id: "wan0"
+
+  - name: ping-cloudflare-dns
+    type: icmp
+    target: "1.1.1.1"
+    interval: 3s
+    labels:
+      probe_id: "wan0"

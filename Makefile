@@ -5,7 +5,10 @@ LDFLAGS  := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)"
 IMAGE    ?= trimon
 TAG      ?= $(VERSION)
 
-.PHONY: build test lint docker clean
+# Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=docker
+CONTAINER_RUNTIME ?= podman
+
+.PHONY: build test lint container docker podman clean release
 
 ## build: compile the trimon binary into ./bin/
 build:
@@ -19,12 +22,29 @@ test:
 lint:
 	golangci-lint run ./...
 
-## docker: build the container image
-docker:
-	docker build \
+## container: build the container image using CONTAINER_RUNTIME (default: podman)
+##            examples: make container
+##                      make container CONTAINER_RUNTIME=docker
+container:
+	$(CONTAINER_RUNTIME) build \
 	  --build-arg VERSION=$(VERSION) \
 	  --build-arg COMMIT=$(COMMIT) \
 	  -t $(IMAGE):$(TAG) .
+
+## podman: build the container image with podman (alias for: make container CONTAINER_RUNTIME=podman)
+podman: CONTAINER_RUNTIME=podman
+podman: container
+
+## docker: build the container image with docker (alias for: make container CONTAINER_RUNTIME=docker)
+docker: CONTAINER_RUNTIME=docker
+docker: container
+
+## release: create an annotated git tag — usage: make release V=v0.1.0
+release:
+	@[ -n "$(V)" ] || { echo "Usage: make release V=v0.1.0"; exit 1; }
+	@echo "$(V)" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "V must match vMAJOR.MINOR.PATCH (e.g. v0.1.0)"; exit 1; }
+	git tag -a $(V) -m "Release $(V)"
+	@echo "Tag $(V) created. Push with: git push origin $(V)"
 
 ## clean: remove build artifacts
 clean:

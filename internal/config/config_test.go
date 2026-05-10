@@ -92,7 +92,8 @@ probes:
 	}
 }
 
-func TestMissingSourceIP(t *testing.T) {
+func TestEmptySourceIPIsValid(t *testing.T) {
+	// Empty source_ip is intentional: the OS picks the interface.
 	yaml := `
 global:
   interval: 30s
@@ -104,8 +105,26 @@ probes:
     target: "127.0.0.1"
 `
 	_, err := parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("expected no error for empty source_ip, got: %v", err)
+	}
+}
+
+func TestInvalidSourceIP(t *testing.T) {
+	yaml := `
+global:
+  interval: 30s
+  timeout: 5s
+  count: 3
+probes:
+  - name: badip
+    type: icmp
+    target: "127.0.0.1"
+    source_ip: "not-an-ip"
+`
+	_, err := parse([]byte(yaml))
 	if err == nil {
-		t.Fatal("expected missing source_ip error, got nil")
+		t.Fatal("expected error for invalid source_ip, got nil")
 	}
 }
 

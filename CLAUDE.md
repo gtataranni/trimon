@@ -16,6 +16,8 @@ It differs from `blackbox_exporter` in one key way: trimon runs an internal sche
 - **Linux-first** — ICMP requires raw sockets and `CAP_NET_RAW`
 - **Module path:** `github.com/<handle>/trimon` (set once, do not refactor)
 - **License:** Apache 2.0
+- Use KISS and DRY principles, alongside Go best practices
+- Updates to this file are allowed but need to be confirmed by user
 
 ### Core dependencies (keep this list small)
 - `golang.org/x/net/icmp` — raw ICMP
@@ -53,8 +55,8 @@ Exporter goroutine ──▶ stdout (v1) / OTLP (later)
 Two interfaces drive the entire design. Stabilize them before adding implementations.
 
 ```go
-// internal/probe/probe.go
-type Probe interface {
+// internal/probe/prober.go
+type Prober interface {
     Run(ctx context.Context) (types.ProbeResult, error)
     Name() string
     Type() string
@@ -155,20 +157,21 @@ Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR
 
 Goal: a runnable daemon that pings configured targets and emits NDJSON to stdout.
 
-- [ ] Module scaffold, Makefile, golangci-lint config, Dockerfile
-- [ ] `pkg/types` — `ProbeResult`, `ProbeConfig`, status constants
-- [ ] `internal/config` — YAML loader + validator (unique names, valid targets, source_ip resolution)
-- [ ] `internal/probe/probe.go` — `Probe` interface
-- [ ] `internal/exporter/exporter.go` — `Exporter` interface
-- [ ] `internal/probe/icmp` — raw ICMP, source_ip binding, count + timeout, RTT stats
-- [ ] `internal/scheduler` — per-probe goroutine + ticker, start/stop/reload diff
-- [ ] `internal/pipeline` — buffered fan-in channel, exporter fan-out
-- [ ] `internal/exporter/stdout` — JSON (NDJSON) and text formats
-- [ ] `internal/server` — `/healthz`, `/metrics` (self-observability)
-- [ ] `cmd/trimon/main.go` — flags, wiring, SIGHUP reload, SIGTERM graceful shutdown
-- [ ] `config.example.yaml`, `README.md`
+- [x] Module scaffold, Makefile, golangci-lint config, Dockerfile
+- [x] `pkg/types` — `ProbeResult`, `ProbeConfig`, status constants
+- [x] `internal/config` — YAML loader + validator (unique names, valid targets, source_ip resolution)
+- [x] `internal/probe/probe.go` — `Probe` interface
+- [x] `internal/exporter/exporter.go` — `Exporter` interface
+- [x] `internal/probe/icmp` — raw ICMP, source_ip binding, count + timeout, RTT stats
+- [x] `internal/scheduler` — per-probe goroutine + ticker, start/stop/reload diff
+- [x] `internal/pipeline` — buffered fan-in channel, exporter fan-out
+- [x] `internal/exporter/stdout` — JSON (NDJSON) and text formats
+- [x] `internal/server` — `/healthz`, `/metrics` (self-observability)
+- [x] `cmd/trimon/main.go` — flags, wiring, ~~SIGHUP reload~~, SIGTERM graceful shutdown
+- [x] POST /reload for reload
+- [x] `config.example.yaml`, `README.md`
 
-**Done criteria:** `trimon --config config.example.yaml` pings 8.8.8.8 every 10s, prints NDJSON to stdout, `/healthz` returns 200, `SIGHUP` reloads config without dropping in-flight probes, `SIGTERM` drains and exits cleanly.
+**Done criteria:** `trimon --config config.example.yaml` pings 8.8.8.8 every 10s, prints NDJSON to stdout, `/healthz` returns 200, ~~tSIGHUP~~ `POST /reload` reloads config without dropping in-flight probes, `SIGTERM` drains and exits cleanly.
 
 ### Phase 2 — v0.2.0: OTLP export
 
@@ -177,9 +180,11 @@ Goal: ship to a real OTel Collector.
 - [ ] `internal/exporter/otlp` — gRPC and HTTP variants
 - [ ] OTel resource attributes (service.name, service.version, host.name)
 - [ ] Map `ProbeResult` → metric names defined in spec (`trimon.probe.duration`, `trimon.probe.rtt.min`, etc.)
+- [ ] Reorganise metrics, planning TBD
 - [ ] Configurable batching, retry, TLS
 - [ ] Multiple exporters can be enabled simultaneously (stdout + OTLP)
 - [ ] Integration test: run trimon against a local Collector in CI
+- [ ] simple MQTT exporter
 
 ### Phase 3 - v0.3.0: Introduce target areas/groups
 
@@ -200,7 +205,7 @@ Goal: trimon becomes genuinely multi-protocol.
 - [ ] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
 - [ ] Per-protocol config schema additions, validated by the config loader
 
-### Phase 5 — v0.5.0: Operability
+### Phase 5 — v0.5.0: Operability and management API
 
 Goal: production-grade lifecycle and observability.
 
@@ -209,6 +214,10 @@ Goal: production-grade lifecycle and observability.
 - [ ] Probe-level enable/disable without restart
 - [ ] Per-probe rate limiting / global concurrency cap
 - [ ] Traces emitted for probe runs (OTel spans alongside metrics)
+- [ ] GET /api/probes/results — returns the last N results per probe as JSON
+- [ ] GET /api/probes, POST /api/probes, handle persisting config (validate → persist to YAML → reload scheduler)
+- [ ] DELETE /api/probes/{name}
+- [ ] PATCH /api/probes/{name} — modify probe interval/timeout/count
 
 ### Phase 6 — v0.6.0: Path & advanced
 
