@@ -15,16 +15,14 @@ server:
 probes:
   - name: ping-google-dns
     type: icmp
-    target: "8.8.8.8"
-    interval: 10s
+    target: "dns.google"
     timeout: 2s
-    count: 5
+    count: 10
     labels:
       probe_id: "wan0"
 
   - name: ping-cloudflare-dns
     type: icmp
     target: "1.1.1.1"
-    interval: 3s
     labels:
       probe_id: "wan0"

@@ -15,7 +15,7 @@ server:
 probes:
   - name: ping-google-dns
     type: icmp
-    target: "8.8.8.8"
+    target: "dns.google"   # can be hostname or address
     source_ip: "192.168.1.10"   # must be an IP assigned to a local interface
     interval: 10s
     timeout: 2s
