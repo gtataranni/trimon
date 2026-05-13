@@ -1,0 +1,38 @@
+global:
+  interval: 10s
+  timeout: 5s
+  count: 3
+  source_ip: ""
+
+exporters:
+  stdout:
+    enabled: true
+    format: json
+
+  otlp:
+    enabled: true
+    endpoint: "otelcol:4317"
+    protocol: grpc
+    insecure: true
+    batch:
+      export_interval: 10s
+      export_timeout: 5s
+    retry:
+      enabled: true
+      max_elapsed_time: 60s
+
+server:
+  listen: ":8080"
+
+probes:
+  - name: ping-google-dns
+    type: icmp
+    target: "8.8.8.8"
+    interval: 5s
+    count: 3
+
+  - name: ping-cloudflare-dns
+    type: icmp
+    target: "1.1.1.1"
+    interval: 5s
+    count: 3

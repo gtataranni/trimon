@@ -1,4 +1,20 @@
 services:
+  trimon:
+    build:
+      context: ../../
+    image: trimon:dev
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./trimon.yaml:/etc/trimon/config.yaml:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - otelcol
+    networks:
+      - observability
+    restart: unless-stopped
+
   otelcol:
     image: otel/opentelemetry-collector-contrib:0.104.0
     volumes:

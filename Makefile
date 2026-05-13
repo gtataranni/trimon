@@ -50,15 +50,17 @@ release:
 clean:
 	rm -rf bin/
 
-## dev-stack: start the local observability stack (Grafana, Prometheus, OTel Collector)
+## dev-stack: build trimon and start the full observability stack (trimon, OTel Collector, Prometheus, Grafana)
 dev-stack:
-	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml up -d
+	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml up --build -d
 	@echo ""
 	@echo "Dev stack is up:"
-	@echo "  Grafana        http://localhost:3000"
-	@echo "  Prometheus     http://localhost:9090"
-	@echo "  OTLP gRPC      localhost:4317"
-	@echo "  OTLP HTTP      http://localhost:4318"
+	@echo "  trimon /metrics  http://localhost:8080/metrics"
+	@echo "  trimon /healthz  http://localhost:8080/healthz"
+	@echo "  Grafana          http://localhost:3000  (admin/admin)"
+	@echo "  Prometheus       http://localhost:9090"
+	@echo "  OTLP gRPC        localhost:4317"
+	@echo "  OTLP HTTP        http://localhost:4318"
 
 ## dev-stack-down: stop the local observability stack and remove volumes
 dev-stack-down:
