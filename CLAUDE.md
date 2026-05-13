@@ -107,7 +107,7 @@ make docker      # build container image with CAP_NET_RAW
 ./bin/trimon --config config.example.yaml --log-level debug
 ```
 
-After build, grant raw socket capability for local runs:
+After build, grant raw socket capability for local runs (Linux only):
 ```bash
 sudo setcap cap_net_raw+ep ./bin/trimon
 ```

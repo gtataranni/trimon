@@ -39,15 +39,15 @@ podman run --rm \
 
 ## Requirements
 
-### CAP_NET_RAW
+### CAP_NET_RAW (Linux)
 
-ICMP probes require a raw IP socket. On Linux this means either:
+ICMP probes require raw IP sockets. Run the binary as one of:
 
-- running as `root`, or
-- granting `CAP_NET_RAW` to the binary: `sudo setcap cap_net_raw+ep ./bin/trimon`
-- passing `--cap-add NET_RAW` to `docker run` / `podman run`
+- `root`, or
+- grant the capability: `sudo setcap cap_net_raw+ep ./bin/trimon`
+- container: pass `--cap-add NET_RAW` to `docker run` / `podman run`
 
-Without this capability, probes will report `status: error` with the message
+Without this, probes report `status: error` with
 `"open raw socket (CAP_NET_RAW required): ..."`.
 
 ---
