@@ -135,17 +135,26 @@ A `ProbeResult.status` is one of:
 
 `failure` and `error` are **different**. `failure` means the probe ran correctly and the target didn't respond. `error` means trimon itself couldn't run the probe. Do not collapse them.
 
-## Self-observability metrics (Prometheus text on `/metrics`)
+## Metrics on `/metrics` (Prometheus text)
 
-These are about trimon itself, not the probe results.
+Two categories live on the `/metrics` endpoint. Full design rationale and per-protocol
+semantics: **[docs/metrics.md](docs/metrics.md)**
 
+**Probe result metrics** — the actual measurements trimon produces:
+- `trimon_probe_up{probe_name}` — gauge, 1 if ≥1 reply received, 0 on total loss or error
+- `trimon_probe_packet_loss_ratio{probe_name}` — gauge 0.0–1.0, NaN on status=error
+- `trimon_probe_packets_sent_total{probe_name}` — counter
+- `trimon_probe_packets_received_total{probe_name}` — counter
+
+**Operational self-observability** — about trimon itself:
 - `trimon_build_info{version, commit, goversion}` — gauge, value 1
-- `trimon_probe_runs_total{probe_name, status}` — counter
+- `trimon_probe_runs_total{probe_name}` — counter, **no status label** (see docs/metrics.md)
 - `trimon_probe_errors_total{probe_name, error_type}` — counter
 - `trimon_scheduler_goroutines` — gauge
 - `trimon_config_reload_total` — counter
 
-Probe results themselves go through the `Exporter` pipeline (stdout in v1), **not** through `/metrics`.
+Full probe results (RTT distributions, all fields, user labels) go through the `Exporter`
+pipeline (stdout in v1 / OTLP in v2).
 
 ---
 

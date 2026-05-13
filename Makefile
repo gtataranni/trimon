@@ -8,7 +8,7 @@ TAG      ?= $(VERSION)
 # Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=docker
 CONTAINER_RUNTIME ?= podman
 
-.PHONY: build test lint container docker podman clean release
+.PHONY: build test lint container docker podman clean release dev-stack dev-stack-down
 
 ## build: compile the trimon binary into ./bin/
 build:
@@ -49,3 +49,17 @@ release:
 ## clean: remove build artifacts
 clean:
 	rm -rf bin/
+
+## dev-stack: start the local observability stack (Grafana, Prometheus, OTel Collector)
+dev-stack:
+	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml up -d
+	@echo ""
+	@echo "Dev stack is up:"
+	@echo "  Grafana        http://localhost:3000"
+	@echo "  Prometheus     http://localhost:9090"
+	@echo "  OTLP gRPC      localhost:4317"
+	@echo "  OTLP HTTP      http://localhost:4318"
+
+## dev-stack-down: stop the local observability stack and remove volumes
+dev-stack-down:
+	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml down -v

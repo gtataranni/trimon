@@ -190,3 +190,137 @@ probes: []
 		t.Errorf("default listen: want :8080, got %q", cfg.Server.Listen)
 	}
 }
+
+func TestOTLPDefaults(t *testing.T) {
+	y := `
+global:
+  interval: 30s
+  timeout: 5s
+  count: 3
+probes: []
+`
+	cfg, err := parse([]byte(y))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	o := cfg.Exporters.OTLP
+	if o.Protocol != "grpc" {
+		t.Errorf("default protocol: want grpc, got %q", o.Protocol)
+	}
+	if o.Batch.ExportInterval != 30*time.Second {
+		t.Errorf("default export_interval: want 30s, got %v", o.Batch.ExportInterval)
+	}
+	if o.Batch.ExportTimeout != 10*time.Second {
+		t.Errorf("default export_timeout: want 10s, got %v", o.Batch.ExportTimeout)
+	}
+	if !o.Retry.Enabled {
+		t.Error("default retry.enabled: want true")
+	}
+	if o.Retry.MaxElapsedTime != 300*time.Second {
+		t.Errorf("default max_elapsed_time: want 300s, got %v", o.Retry.MaxElapsedTime)
+	}
+}
+
+func TestOTLPValidation(t *testing.T) {
+	base := `
+global:
+  interval: 30s
+  timeout: 5s
+  count: 3
+probes: []
+exporters:
+  otlp:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+	}{
+		{
+			name: "disabled with no endpoint is valid",
+			snippet: `
+    enabled: false
+`,
+			wantErr: false,
+		},
+		{
+			name: "enabled with endpoint and insecure is valid",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4317"
+    insecure: true
+`,
+			wantErr: false,
+		},
+		{
+			name: "enabled without endpoint errors",
+			snippet: `
+    enabled: true
+    insecure: true
+`,
+			wantErr: true,
+		},
+		{
+			name: "invalid protocol errors",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4317"
+    protocol: ftp
+`,
+			wantErr: true,
+		},
+		{
+			name: "http protocol is valid",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4318"
+    protocol: http
+    insecure: true
+`,
+			wantErr: false,
+		},
+		{
+			name: "cert_file without key_file errors",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4317"
+    tls:
+      cert_file: "/path/to/cert.pem"
+`,
+			wantErr: true,
+		},
+		{
+			name: "key_file without cert_file errors",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4317"
+    tls:
+      key_file: "/path/to/key.pem"
+`,
+			wantErr: true,
+		},
+		{
+			name: "both cert and key set is valid",
+			snippet: `
+    enabled: true
+    endpoint: "localhost:4317"
+    tls:
+      cert_file: "/path/to/cert.pem"
+      key_file: "/path/to/key.pem"
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(base + tc.snippet))
+			if tc.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}

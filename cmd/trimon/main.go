@@ -15,6 +15,7 @@ import (
 
 	"github.com/gtataranni/trimon/internal/config"
 	"github.com/gtataranni/trimon/internal/exporter"
+	otlpexp "github.com/gtataranni/trimon/internal/exporter/otlp"
 	stdoutexp "github.com/gtataranni/trimon/internal/exporter/stdout"
 	"github.com/gtataranni/trimon/internal/pipeline"
 	"github.com/gtataranni/trimon/internal/probe"
@@ -38,7 +39,7 @@ func main() {
 
 	logger := buildLogger(*logLevel, *logFormat)
 
-	// Install a no-op OTel tracer provider; replaced by OTLP exporter in a future release.
+	// disable tracing
 	otel.SetTracerProvider(noop.NewTracerProvider())
 
 	cfg, err := config.Load(*configPath)
@@ -58,7 +59,7 @@ func main() {
 
 	srv := server.New(cfg.Server.Listen, version, commit)
 
-	exporters := buildExporters(cfg, srv)
+	exporters, closeExporters := buildExporters(context.Background(), cfg, srv, logger, version)
 	pipe := pipeline.New(exporters, logger)
 
 	sched := scheduler.New(probeFactory, pipe.Results(), logger)
@@ -97,18 +98,40 @@ func main() {
 	sched.Stop()
 	cancel()
 	pipe.Wait()
+	closeExporters()
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutCancel()
 	_ = srv.Shutdown(shutCtx)
 }
 
-func buildExporters(cfg *config.Config, srv *server.Server) []exporter.Exporter {
+func buildExporters(ctx context.Context, cfg *config.Config, srv *server.Server, logger *slog.Logger, version string) ([]exporter.Exporter, func()) {
 	var list []exporter.Exporter
+	var closers []func() error
+
 	list = append(list, &metricsExporter{srv: srv})
+
 	if cfg.Exporters.Stdout.Enabled {
 		list = append(list, stdoutexp.New(cfg.Exporters.Stdout.Format))
 	}
-	return list
+
+	if cfg.Exporters.OTLP.Enabled {
+		oe, err := otlpexp.New(ctx, cfg.Exporters.OTLP, version, logger)
+		if err != nil {
+			logger.Error("failed to create OTLP exporter", "error", err)
+		} else {
+			list = append(list, oe)
+			closers = append(closers, oe.Close)
+		}
+	}
+
+	closeAll := func() {
+		for _, fn := range closers {
+			if err := fn(); err != nil {
+				logger.Error("exporter close error", "error", err)
+			}
+		}
+	}
+	return list, closeAll
 }
 
 func buildLogger(level, format string) *slog.Logger {

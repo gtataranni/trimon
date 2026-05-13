@@ -26,9 +26,40 @@ type StdoutExporterConfig struct {
 	Format  string `yaml:"format"` // json | text
 }
 
+// OTLPTLSConfig holds TLS material paths for the OTLP exporter.
+type OTLPTLSConfig struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	CAFile   string `yaml:"ca_file"`
+}
+
+// OTLPBatchConfig controls the OTel SDK periodic reader timing.
+type OTLPBatchConfig struct {
+	ExportInterval time.Duration `yaml:"export_interval"` // default 30s
+	ExportTimeout  time.Duration `yaml:"export_timeout"`  // default 10s
+}
+
+// OTLPRetryConfig controls retries on transient export failures.
+type OTLPRetryConfig struct {
+	Enabled        bool          `yaml:"enabled"`
+	MaxElapsedTime time.Duration `yaml:"max_elapsed_time"` // default 300s
+}
+
+// OTLPExporterConfig holds OTLP exporter settings.
+type OTLPExporterConfig struct {
+	Enabled  bool            `yaml:"enabled"`
+	Endpoint string          `yaml:"endpoint"`
+	Protocol string          `yaml:"protocol"` // grpc | http
+	Insecure bool            `yaml:"insecure"`
+	TLS      OTLPTLSConfig   `yaml:"tls"`
+	Batch    OTLPBatchConfig `yaml:"batch"`
+	Retry    OTLPRetryConfig `yaml:"retry"`
+}
+
 // ExportersConfig groups all exporter configurations.
 type ExportersConfig struct {
 	Stdout StdoutExporterConfig `yaml:"stdout"`
+	OTLP   OTLPExporterConfig   `yaml:"otlp"`
 }
 
 // ServerConfig holds the HTTP server bind address.
@@ -98,6 +129,11 @@ func parse(data []byte) (*Config, error) {
 	raw.Global.Count = 3
 	raw.Server.Listen = ":8080"
 	raw.Exporters.Stdout.Format = "json"
+	raw.Exporters.OTLP.Protocol = "grpc"
+	raw.Exporters.OTLP.Batch.ExportInterval = 30 * time.Second
+	raw.Exporters.OTLP.Batch.ExportTimeout = 10 * time.Second
+	raw.Exporters.OTLP.Retry.Enabled = true
+	raw.Exporters.OTLP.Retry.MaxElapsedTime = 300 * time.Second
 
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
@@ -114,6 +150,10 @@ func parse(data []byte) (*Config, error) {
 
 	if raw.Exporters.Stdout.Format != "json" && raw.Exporters.Stdout.Format != "text" {
 		return nil, fmt.Errorf("exporters.stdout.format must be \"json\" or \"text\", got %q", raw.Exporters.Stdout.Format)
+	}
+
+	if err := validateOTLP(raw.Exporters.OTLP); err != nil {
+		return nil, err
 	}
 
 	return &Config{
@@ -213,6 +253,22 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		})
 	}
 	return out, nil
+}
+
+func validateOTLP(o OTLPExporterConfig) error {
+	if !o.Enabled {
+		return nil
+	}
+	if o.Endpoint == "" {
+		return errors.New("exporters.otlp.endpoint is required when otlp is enabled")
+	}
+	if o.Protocol != "grpc" && o.Protocol != "http" {
+		return fmt.Errorf("exporters.otlp.protocol must be \"grpc\" or \"http\", got %q", o.Protocol)
+	}
+	if (o.TLS.CertFile == "") != (o.TLS.KeyFile == "") {
+		return errors.New("exporters.otlp.tls: cert_file and key_file must both be set or both be empty")
+	}
+	return nil
 }
 
 // resolveTarget checks that target is either a valid IP or a resolvable hostname.

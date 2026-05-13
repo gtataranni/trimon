@@ -9,6 +9,22 @@ exporters:
     enabled: true
     format: json     # json | text
 
+  # otlp:
+  #   enabled: false
+  #   endpoint: "localhost:4317"
+  #   protocol: grpc   # grpc | http
+  #   insecure: true
+  #   tls:
+  #     cert_file: ""
+  #     key_file: ""
+  #     ca_file: ""
+  #   batch:
+  #     export_interval: 30s
+  #     export_timeout: 10s
+  #   retry:
+  #     enabled: true
+  #     max_elapsed_time: 300s
+
 server:
   listen: ":8080"    # HTTP server for /healthz and /metrics
 

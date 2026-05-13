@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"runtime"
 	"sync"
@@ -16,13 +17,18 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
-// Metrics holds all self-observability Prometheus instruments.
+// Metrics holds all Prometheus instruments exposed on /metrics:
+// probe result gauges/counters and trimon operational self-observability.
 type Metrics struct {
-	BuildInfo           *prometheus.GaugeVec
-	ProbeRunsTotal      *prometheus.CounterVec
-	ProbeErrorsTotal    *prometheus.CounterVec
-	SchedulerGoroutines prometheus.Gauge
-	ConfigReloadTotal   prometheus.Counter
+	BuildInfo                *prometheus.GaugeVec
+	ProbeRunsTotal           *prometheus.CounterVec
+	ProbePacketsSentTotal    *prometheus.CounterVec
+	ProbePacketsReceivedTotal *prometheus.CounterVec
+	ProbeUp                  *prometheus.GaugeVec
+	ProbePacketLossRatio     *prometheus.GaugeVec
+	ProbeErrorsTotal         *prometheus.CounterVec
+	SchedulerGoroutines      prometheus.Gauge
+	ConfigReloadTotal        prometheus.Counter
 }
 
 // Server is the internal HTTP server exposing /healthz, /metrics, /reload, and /config.
@@ -55,8 +61,28 @@ func New(listenAddr string, version, commit string) *Server {
 
 		ProbeRunsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "trimon_probe_runs_total",
-			Help: "Total probe runs, partitioned by probe_name and status.",
-		}, []string{"probe_name", "status"}),
+			Help: "Total probe runs, partitioned by probe_name.",
+		}, []string{"probe_name"}),
+
+		ProbePacketsSentTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "trimon_probe_packets_sent_total",
+			Help: "Cumulative packets sent, partitioned by probe_name.",
+		}, []string{"probe_name"}),
+
+		ProbePacketsReceivedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "trimon_probe_packets_received_total",
+			Help: "Cumulative packets received, partitioned by probe_name.",
+		}, []string{"probe_name"}),
+
+		ProbeUp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "trimon_probe_up",
+			Help: "1 if at least one reply was received in the last run, 0 on total loss or error. See docs/metrics.md for protocol semantics.",
+		}, []string{"probe_name"}),
+
+		ProbePacketLossRatio: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "trimon_probe_packet_loss_ratio",
+			Help: "Packet loss fraction [0.0, 1.0] from the last completed probe run. NaN when status=error. See docs/metrics.md.",
+		}, []string{"probe_name"}),
 
 		ProbeErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "trimon_probe_errors_total",
@@ -77,6 +103,10 @@ func New(listenAddr string, version, commit string) *Server {
 	reg.MustRegister(
 		m.BuildInfo,
 		m.ProbeRunsTotal,
+		m.ProbePacketsSentTotal,
+		m.ProbePacketsReceivedTotal,
+		m.ProbeUp,
+		m.ProbePacketLossRatio,
 		m.ProbeErrorsTotal,
 		m.SchedulerGoroutines,
 		m.ConfigReloadTotal,
@@ -118,10 +148,23 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// RecordResult increments the probe run and error counters for r.
+// RecordResult updates probe result metrics and operational counters for r.
 func (s *Server) RecordResult(r types.ProbeResult) {
-	s.metrics.ProbeRunsTotal.WithLabelValues(r.ProbeName, string(r.Status)).Inc()
-	if r.Status == types.StatusError {
+	s.metrics.ProbeRunsTotal.WithLabelValues(r.ProbeName).Inc()
+
+	if r.Status != types.StatusError {
+		s.metrics.ProbePacketsSentTotal.WithLabelValues(r.ProbeName).Add(float64(r.PacketsSent))
+		s.metrics.ProbePacketsReceivedTotal.WithLabelValues(r.ProbeName).Add(float64(r.PacketsReceived))
+		s.metrics.ProbePacketLossRatio.WithLabelValues(r.ProbeName).Set(r.PacketLossRatio)
+
+		upVal := 0.0
+		if r.PacketLossRatio < 1.0 {
+			upVal = 1.0
+		}
+		s.metrics.ProbeUp.WithLabelValues(r.ProbeName).Set(upVal)
+	} else {
+		s.metrics.ProbeUp.WithLabelValues(r.ProbeName).Set(0.0)
+		s.metrics.ProbePacketLossRatio.WithLabelValues(r.ProbeName).Set(math.NaN())
 		s.metrics.ProbeErrorsTotal.WithLabelValues(r.ProbeName, "probe_error").Inc()
 	}
 }

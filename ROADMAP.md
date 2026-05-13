@@ -26,16 +26,16 @@ Goal: a runnable daemon that pings configured targets and emits NDJSON to stdout
 
 ## Phase 2 — v0.2.0: OTLP export
 
-Goal: ship to a real OTel Collector.
+Goal: ship probe results to a real OTel Collector as metrics.
 
-- [ ] `internal/exporter/otlp` — gRPC and HTTP variants
+Metric spec: **[docs/metrics.md — OTLP exporter metrics](docs/metrics.md)**
+
+- [ ] `internal/exporter/otlp` — gRPC and HTTP variants, configurable batching/retry/TLS
 - [ ] OTel resource attributes (service.name, service.version, host.name)
-- [ ] Map `ProbeResult` → metric names defined in spec (`trimon.probe.duration`, `trimon.probe.rtt.min`, etc.)
-- [ ] Reorganise metrics, planning TBD
-- [ ] Configurable batching, retry, TLS
-- [ ] Multiple exporters can be enabled simultaneously (stdout + OTLP)
-- [ ] Integration test: run trimon against a local Collector in CI
-- [ ] Simple MQTT exporter
+- [ ] Map `ProbeResult` → metric names per spec in docs/metrics.md
+- [ ] Multiple exporters simultaneously (stdout + OTLP)
+- [ ] `examples/local-stack/` — Docker Compose stack: OTel Collector + Prometheus + Grafana
+- [ ] Integration test: run trimon against local Collector (build tag `integration`)
 
 ---
 
@@ -59,6 +59,7 @@ Goal: trimon becomes genuinely multi-protocol.
 - [ ] DNS probe (`internal/probe/dns`) — A/AAAA/CNAME, resolver override, expected answer match
 - [ ] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
 - [ ] Per-protocol config schema additions, validated by the config loader
+- [ ] Simple MQTT exporter (`internal/exporter/mqtt`) — publish probe results to an MQTT broker
 
 ---
 
@@ -86,6 +87,7 @@ Goal: the things that needed everything else to be solid first.
 - [ ] MTR-style continuous path probing (TBD)
 - [ ] Path-change detection events (TBD)
 - [ ] Probe result history buffer for short retention without external storage
+- [ ] Trends and advanced self-observability: recording rules guidance, long-window loss rates, anomaly baselines (TBD)
 
 ---
 
