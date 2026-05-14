@@ -16,3 +16,12 @@ scrape_configs:
     static_configs:
       - targets:
           - trimon:8080
+    # trimon_probe_* metrics are already scraped via the otelcol-prometheus job
+    # (trimon pushes them via OTLP; the collector re-exposes them with richer
+    # resource-attribute labels). Drop them here to avoid duplicate time series.
+    # Self-observability metrics (build_info, scheduler_goroutines, etc.) are
+    # not pushed via OTLP, so we keep this job for those.
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'trimon_probe_(up|packet_loss_ratio|packets_sent_total|packets_received_total)'
+        action: drop
