@@ -1,6 +1,6 @@
 global:
-  interval: 10s
-  timeout: 5s
+  probe_every: 30s
+  timeout: 10s
   count: 3
   source_ip: ""
 
@@ -15,7 +15,7 @@ exporters:
     protocol: grpc
     insecure: true
     batch:
-      export_interval: 10s
+      export_interval: 30s
       export_timeout: 5s
     retry:
       enabled: true
@@ -28,11 +28,10 @@ probes:
   - name: ping-google-dns
     type: icmp
     target: "8.8.8.8"
-    interval: 5s
-    count: 3
+    count: 10
 
   - name: ping-cloudflare-dns
     type: icmp
     target: "1.1.1.1"
-    interval: 5s
-    count: 3
+    probe_every: 20s
+    count: 8

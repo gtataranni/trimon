@@ -14,10 +14,11 @@ import (
 
 // GlobalConfig holds daemon-wide defaults.
 type GlobalConfig struct {
-	Interval time.Duration `yaml:"interval"`
-	Timeout  time.Duration `yaml:"timeout"`
-	Count    int           `yaml:"count"`
-	SourceIP string        `yaml:"source_ip"`
+	Interval       time.Duration `yaml:"probe_every"`     // scheduler cadence: how often to run each probe
+	PacketInterval time.Duration `yaml:"packet_interval"` // wait between individual ICMP echo sends (pro-bing Interval)
+	Timeout        time.Duration `yaml:"timeout"`
+	Count          int           `yaml:"count"`
+	SourceIP       string        `yaml:"source_ip"`
 }
 
 // StdoutExporterConfig holds stdout exporter settings.
@@ -69,14 +70,15 @@ type ServerConfig struct {
 
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
-	Name     string            `yaml:"name"`
-	Type     string            `yaml:"type"`
-	Target   string            `yaml:"target"`
-	SourceIP string            `yaml:"source_ip"`
-	Interval *Duration         `yaml:"interval"`
-	Timeout  *Duration         `yaml:"timeout"`
-	Count    *int              `yaml:"count"`
-	Labels   map[string]string `yaml:"labels"`
+	Name           string            `yaml:"name"`
+	Type           string            `yaml:"type"`
+	Target         string            `yaml:"target"`
+	SourceIP       string            `yaml:"source_ip"`
+	Interval       *Duration         `yaml:"probe_every"`
+	PacketInterval *Duration         `yaml:"packet_interval"`
+	Timeout        *Duration         `yaml:"timeout"`
+	Count          *int              `yaml:"count"`
+	Labels         map[string]string `yaml:"labels"`
 }
 
 // Duration is a yaml-decodable wrapper around time.Duration.
@@ -125,6 +127,7 @@ func parse(data []byte) (*Config, error) {
 
 	// Apply defaults before unmarshalling so zero values are distinguishable.
 	raw.Global.Interval = 30 * time.Second
+	raw.Global.PacketInterval = 1 * time.Second
 	raw.Global.Timeout = 5 * time.Second
 	raw.Global.Count = 3
 	raw.Server.Listen = ":8080"
@@ -166,7 +169,10 @@ func parse(data []byte) (*Config, error) {
 
 func validateGlobal(g GlobalConfig) error {
 	if g.Interval <= 0 {
-		return errors.New("global.interval must be positive")
+		return errors.New("global.probe_every must be positive")
+	}
+	if g.PacketInterval <= 0 {
+		return errors.New("global.packet_interval must be positive")
 	}
 	if g.Timeout <= 0 {
 		return errors.New("global.timeout must be positive")
@@ -217,6 +223,10 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		if r.Interval != nil {
 			interval = r.Interval.Duration
 		}
+		packetInterval := global.PacketInterval
+		if r.PacketInterval != nil {
+			packetInterval = r.PacketInterval.Duration
+		}
 		timeout := global.Timeout
 		if r.Timeout != nil {
 			timeout = r.Timeout.Duration
@@ -227,7 +237,10 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		}
 
 		if interval <= 0 {
-			return nil, fmt.Errorf("probe %q: interval must be positive", r.Name)
+			return nil, fmt.Errorf("probe %q: probe_every must be positive", r.Name)
+		}
+		if packetInterval <= 0 {
+			return nil, fmt.Errorf("probe %q: packet_interval must be positive", r.Name)
 		}
 		if timeout <= 0 {
 			return nil, fmt.Errorf("probe %q: timeout must be positive", r.Name)
@@ -242,14 +255,15 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		}
 
 		out = append(out, types.ProbeConfig{
-			Name:     r.Name,
-			Type:     r.Type,
-			Target:   r.Target,
-			SourceIP: sourceIP,
-			Interval: interval,
-			Timeout:  timeout,
-			Count:    count,
-			Labels:   labels,
+			Name:           r.Name,
+			Type:           r.Type,
+			Target:         r.Target,
+			SourceIP:       sourceIP,
+			Interval:       interval,
+			PacketInterval: packetInterval,
+			Timeout:        timeout,
+			Count:          count,
+			Labels:         labels,
 		})
 	}
 	return out, nil

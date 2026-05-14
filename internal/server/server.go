@@ -244,10 +244,11 @@ type configDump struct {
 }
 
 type globalDump struct {
-	Interval string `json:"interval" yaml:"interval"`
-	Timeout  string `json:"timeout" yaml:"timeout"`
-	Count    int    `json:"count" yaml:"count"`
-	SourceIP string `json:"source_ip,omitempty" yaml:"source_ip,omitempty"`
+	Interval       string `json:"probe_every" yaml:"probe_every"`
+	PacketInterval string `json:"packet_interval" yaml:"packet_interval"`
+	Timeout        string `json:"timeout" yaml:"timeout"`
+	Count          int    `json:"count" yaml:"count"`
+	SourceIP       string `json:"source_ip,omitempty" yaml:"source_ip,omitempty"`
 }
 
 type exportersDump struct {
@@ -264,14 +265,15 @@ type serverDump struct {
 }
 
 type probeDump struct {
-	Name     string            `json:"name" yaml:"name"`
-	Type     string            `json:"type" yaml:"type"`
-	Target   string            `json:"target" yaml:"target"`
-	SourceIP string            `json:"source_ip" yaml:"source_ip"`
-	Interval string            `json:"interval" yaml:"interval"`
-	Timeout  string            `json:"timeout" yaml:"timeout"`
-	Count    int               `json:"count" yaml:"count"`
-	Labels   map[string]string `json:"labels" yaml:"labels"`
+	Name           string            `json:"name" yaml:"name"`
+	Type           string            `json:"type" yaml:"type"`
+	Target         string            `json:"target" yaml:"target"`
+	SourceIP       string            `json:"source_ip" yaml:"source_ip"`
+	Interval       string            `json:"probe_every" yaml:"probe_every"`
+	PacketInterval string            `json:"packet_interval" yaml:"packet_interval"`
+	Timeout        string            `json:"timeout" yaml:"timeout"`
+	Count          int               `json:"count" yaml:"count"`
+	Labels         map[string]string `json:"labels" yaml:"labels"`
 }
 
 func toConfigDump(cfg *config.Config) configDump {
@@ -282,22 +284,24 @@ func toConfigDump(cfg *config.Config) configDump {
 			labels = map[string]string{}
 		}
 		probes[i] = probeDump{
-			Name:     p.Name,
-			Type:     p.Type,
-			Target:   p.Target,
-			SourceIP: p.SourceIP,
-			Interval: p.Interval.String(),
-			Timeout:  p.Timeout.String(),
-			Count:    p.Count,
-			Labels:   labels,
+			Name:           p.Name,
+			Type:           p.Type,
+			Target:         p.Target,
+			SourceIP:       p.SourceIP,
+			Interval:       p.Interval.String(),
+			PacketInterval: p.PacketInterval.String(),
+			Timeout:        p.Timeout.String(),
+			Count:          p.Count,
+			Labels:         labels,
 		}
 	}
 	return configDump{
 		Global: globalDump{
-			Interval: cfg.Global.Interval.String(),
-			Timeout:  cfg.Global.Timeout.String(),
-			Count:    cfg.Global.Count,
-			SourceIP: cfg.Global.SourceIP,
+			Interval:       cfg.Global.Interval.String(),
+			PacketInterval: cfg.Global.PacketInterval.String(),
+			Timeout:        cfg.Global.Timeout.String(),
+			Count:          cfg.Global.Count,
+			SourceIP:       cfg.Global.SourceIP,
 		},
 		Exporters: exportersDump{
 			Stdout: stdoutDump{

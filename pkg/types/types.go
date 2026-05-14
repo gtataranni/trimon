@@ -14,14 +14,15 @@ const (
 
 // ProbeConfig holds per-probe configuration after parsing and validation.
 type ProbeConfig struct {
-	Name      string            `yaml:"name"`
-	Type      string            `yaml:"type"`
-	Target    string            `yaml:"target"`
-	SourceIP  string            `yaml:"source_ip"`
-	Interval  time.Duration     `yaml:"interval"`
-	Timeout   time.Duration     `yaml:"timeout"`
-	Count     int               `yaml:"count"`
-	Labels    map[string]string `yaml:"labels"`
+	Name           string            `yaml:"name"`
+	Type           string            `yaml:"type"`
+	Target         string            `yaml:"target"`
+	SourceIP       string            `yaml:"source_ip"`
+	Interval       time.Duration     `yaml:"probe_every"`      // scheduler cadence: how often to run the probe
+	PacketInterval time.Duration     `yaml:"packet_interval"`  // pro-bing: wait between individual ICMP echo sends
+	Timeout        time.Duration     `yaml:"timeout"`
+	Count          int               `yaml:"count"`
+	Labels         map[string]string `yaml:"labels"`
 }
 
 // ProbeResult is the output of a single probe run.

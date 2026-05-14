@@ -1,5 +1,5 @@
 global:
-  interval: 30s      # default probe interval
+  probe_every: 30s   # default probe interval
   timeout: 5s        # default probe timeout
   count: 3           # default ICMP echo count
   source_ip: ""      # set a daemon-wide source IP or override per probe
@@ -33,7 +33,7 @@ probes:
     type: icmp
     target: "dns.google"   # can be hostname or address
     source_ip: "192.168.1.10"   # must be an IP assigned to a local interface
-    interval: 10s
+    probe_every: 10s
     timeout: 2s
     count: 5
     labels:
@@ -44,6 +44,6 @@ probes:
     type: icmp
     target: "1.1.1.1"
     source_ip: "192.168.1.10"
-    interval: 30s
+    probe_every: 30s
     labels:
       probe_id: "wan0"

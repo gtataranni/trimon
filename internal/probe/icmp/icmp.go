@@ -10,9 +10,6 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
-// interPacketInterval is the wait time between sending successive ICMP echo packets.
-const interPacketInterval = 200 * time.Millisecond
-
 // Prober implements probe.Prober for ICMP echo (ping).
 type Prober struct {
 	cfg types.ProbeConfig
@@ -47,7 +44,7 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 	}
 
 	pinger.Count = p.cfg.Count
-	pinger.Interval = interPacketInterval
+	pinger.Interval = p.cfg.PacketInterval
 	pinger.Timeout = p.cfg.Timeout
 	pinger.Source = p.cfg.SourceIP
 	pinger.SetPrivileged(true)

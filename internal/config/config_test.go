@@ -8,7 +8,7 @@ import (
 func TestParseValid(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
@@ -25,7 +25,7 @@ probes:
   - name: loopback
     type: icmp
     target: "127.0.0.1"
-    interval: 10s
+    probe_every: 10s
     timeout: 2s
     count: 5
     labels:
@@ -43,7 +43,7 @@ probes:
 		t.Errorf("probe name: want loopback, got %q", p.Name)
 	}
 	if p.Interval != 10*time.Second {
-		t.Errorf("probe interval: want 10s, got %v", p.Interval)
+		t.Errorf("probe probe_every: want 10s, got %v", p.Interval)
 	}
 	if p.SourceIP != "127.0.0.1" {
 		t.Errorf("source_ip: want 127.0.0.1, got %q", p.SourceIP)
@@ -56,7 +56,7 @@ probes:
 func TestDuplicateProbeName(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
@@ -77,7 +77,7 @@ probes:
 func TestUnknownProbeType(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
@@ -96,7 +96,7 @@ func TestEmptySourceIPIsValid(t *testing.T) {
 	// Empty source_ip is intentional: the OS picks the interface.
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
 probes:
@@ -113,7 +113,7 @@ probes:
 func TestInvalidSourceIP(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
 probes:
@@ -131,7 +131,7 @@ probes:
 func TestGlobalSourceIPFallback(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
@@ -152,7 +152,7 @@ probes:
 func TestInvalidExporterFormat(t *testing.T) {
 	yaml := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
@@ -178,7 +178,7 @@ probes: []
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Global.Interval != 30*time.Second {
-		t.Errorf("default interval: want 30s, got %v", cfg.Global.Interval)
+		t.Errorf("default probe_every: want 30s, got %v", cfg.Global.Interval)
 	}
 	if cfg.Global.Count != 3 {
 		t.Errorf("default count: want 3, got %d", cfg.Global.Count)
@@ -194,7 +194,7 @@ probes: []
 func TestOTLPDefaults(t *testing.T) {
 	y := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
 probes: []
@@ -224,7 +224,7 @@ probes: []
 func TestOTLPValidation(t *testing.T) {
 	base := `
 global:
-  interval: 30s
+  probe_every: 30s
   timeout: 5s
   count: 3
 probes: []
