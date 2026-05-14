@@ -29,3 +29,14 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 ENTRYPOINT ["/trimon"]
 CMD ["--config", "/etc/trimon/config.yaml"]
+
+# ── Debug stage (shell + ping utilities) ──────────────────────────────────────
+FROM alpine:3.21 AS debug
+
+COPY --from=builder /out/trimon /trimon
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+RUN apk add --no-cache iputils curl
+
+ENTRYPOINT ["/trimon"]
+CMD ["--config", "/etc/trimon/config.yaml"]

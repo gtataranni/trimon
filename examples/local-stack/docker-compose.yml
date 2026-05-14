@@ -2,6 +2,7 @@ services:
   trimon:
     build:
       context: ../../
+      target: debug
     image: trimon:dev
     container_name: trimon-dev
     cap_add:
