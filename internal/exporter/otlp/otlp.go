@@ -111,7 +111,7 @@ func (e *Exporter) registerInstruments(meter metric.Meter) error {
 	if err != nil {
 		return err
 	}
-	e.success, err = meter.Int64Gauge("trimon.probe.success")
+	e.success, err = meter.Int64Gauge("trimon.probe.success") // will be visible as trimon_probe_success
 	if err != nil {
 		return err
 	}
@@ -261,4 +261,3 @@ func buildTLSConfig(tlsCfg config.OTLPTLSConfig) (*tls.Config, error) {
 
 	return cfg, nil
 }
-
