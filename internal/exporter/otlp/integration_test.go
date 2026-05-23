@@ -112,6 +112,7 @@ func TestIntegration_ExportRTTMean(t *testing.T) {
 	ctx := context.Background()
 
 	cfg := config.OTLPExporterConfig{
+		Enabled:  true,
 		Endpoint: addr,
 		Protocol: "grpc",
 		Insecure: true,
@@ -122,7 +123,7 @@ func TestIntegration_ExportRTTMean(t *testing.T) {
 		},
 	}
 
-	e, err := New(ctx, cfg, "test-version", slog.Default())
+	e, err := New(ctx, cfg, "test-version", "test-commit", slog.Default())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

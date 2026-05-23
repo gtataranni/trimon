@@ -311,6 +311,10 @@ func buildExporter(ctx context.Context, cfg config.OTLPExporterConfig) (sdkmetri
 func buildGRPC(ctx context.Context, cfg config.OTLPExporterConfig) (sdkmetric.Exporter, error) {
 	opts := []otlpmetricgrpc.Option{
 		otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
+		otlpmetricgrpc.WithRetry(otlpmetricgrpc.RetryConfig{
+			Enabled:        cfg.Retry.Enabled,
+			MaxElapsedTime: cfg.Retry.MaxElapsedTime,
+		}),
 	}
 	if cfg.Insecure {
 		opts = append(opts, otlpmetricgrpc.WithInsecure())
@@ -327,6 +331,10 @@ func buildGRPC(ctx context.Context, cfg config.OTLPExporterConfig) (sdkmetric.Ex
 func buildHTTP(ctx context.Context, cfg config.OTLPExporterConfig) (sdkmetric.Exporter, error) {
 	opts := []otlpmetrichttp.Option{
 		otlpmetrichttp.WithEndpoint(cfg.Endpoint),
+		otlpmetrichttp.WithRetry(otlpmetrichttp.RetryConfig{
+			Enabled:        cfg.Retry.Enabled,
+			MaxElapsedTime: cfg.Retry.MaxElapsedTime,
+		}),
 	}
 	if cfg.Insecure {
 		opts = append(opts, otlpmetrichttp.WithInsecure())
