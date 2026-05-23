@@ -30,12 +30,12 @@ Goal: ship probe results to a real OTel Collector as metrics.
 
 Metric spec: **[docs/metrics.md — OTLP exporter metrics](docs/metrics.md)**
 
-- [ ] `internal/exporter/otlp` — gRPC and HTTP variants, configurable batching/retry/TLS
-- [ ] OTel resource attributes (service.name, service.version, host.name)
-- [ ] Map `ProbeResult` → metric names per spec in docs/metrics.md
-- [ ] Multiple exporters simultaneously (stdout + OTLP)
-- [ ] `examples/local-stack/` — Docker Compose stack: OTel Collector + Prometheus + Grafana
-- [ ] Integration test: run trimon against local Collector (build tag `integration`)
+- [x] `internal/exporter/otlp` — gRPC and HTTP variants, configurable batching/retry/TLS
+- [x] OTel resource attributes (service.name, service.version, host.name)
+- [x] Map `ProbeResult` → metric names per spec in docs/metrics.md
+- [x] Multiple exporters simultaneously (stdout + OTLP)
+- [x] `examples/local-stack/` — Docker Compose stack: OTel Collector + Prometheus + Grafana
+- [x] Integration test: run trimon against local Collector (build tag `integration`)
 
 ---
 
