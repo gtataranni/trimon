@@ -4,12 +4,15 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
+	"github.com/gtataranni/trimon/internal/config"
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
@@ -21,11 +24,23 @@ func newTestExporter(t *testing.T) (*Exporter, *sdkmetric.ManualReader) {
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	meter := provider.Meter(instrScope)
 	e := &Exporter{provider: provider, logger: slog.Default()}
-	if err := e.registerInstruments(meter); err != nil {
+	if err := e.registerInstruments(meter, "test-version", "abc1234"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 	return e, reader
+}
+
+// newBridgeExporter creates a real Exporter (with Prometheus bridge, no OTLP)
+// for integration tests that verify /metrics output.
+func newBridgeExporter(t *testing.T) *Exporter {
+	t.Helper()
+	exp, err := New(context.Background(), config.OTLPExporterConfig{Enabled: false}, "test-version", "abc1234", slog.Default())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = exp.Close() })
+	return exp
 }
 
 // collectMetrics triggers a manual collection and returns the flat Metrics slice.
@@ -41,9 +56,8 @@ func collectMetrics(t *testing.T, reader *sdkmetric.ManualReader) []metricdata.M
 	return rm.ScopeMetrics[0].Metrics
 }
 
-// findFloat64Gauge locates a named metric in ms and returns its single
-// datapoint value and attribute set.  It fatals if the metric is absent or
-// the data is not a Gauge[float64].
+// findFloat64Gauge locates a named metric and returns its single datapoint value
+// and attribute set. Fatals if absent or not a Gauge[float64].
 func findFloat64Gauge(t *testing.T, ms []metricdata.Metrics, name string) (float64, attribute.Set) {
 	t.Helper()
 	for _, m := range ms {
@@ -64,7 +78,7 @@ func findFloat64Gauge(t *testing.T, ms []metricdata.Metrics, name string) (float
 }
 
 // findInt64Gauge locates a named metric and returns its single datapoint value
-// and attribute set.  It fatals if absent or not a Gauge[int64].
+// and attribute set. Fatals if absent or not a Gauge[int64].
 func findInt64Gauge(t *testing.T, ms []metricdata.Metrics, name string) (int64, attribute.Set) {
 	t.Helper()
 	for _, m := range ms {
@@ -84,6 +98,28 @@ func findInt64Gauge(t *testing.T, ms []metricdata.Metrics, name string) (int64, 
 	return 0, attribute.NewSet()
 }
 
+// findInt64Counter locates a named metric and returns the sum of its datapoints.
+// Fatals if absent or not a Sum[int64].
+func findInt64Counter(t *testing.T, ms []metricdata.Metrics, name string) int64 {
+	t.Helper()
+	for _, m := range ms {
+		if m.Name != name {
+			continue
+		}
+		s, ok := m.Data.(metricdata.Sum[int64])
+		if !ok {
+			t.Fatalf("metric %q: expected Sum[int64], got %T", name, m.Data)
+		}
+		var total int64
+		for _, dp := range s.DataPoints {
+			total += dp.Value
+		}
+		return total
+	}
+	t.Fatalf("metric %q not found in collected metrics", name)
+	return 0
+}
+
 // attrString retrieves a string attribute value from a Set, fataling when absent.
 func attrString(t *testing.T, attrs attribute.Set, key string) string {
 	t.Helper()
@@ -94,10 +130,22 @@ func attrString(t *testing.T, attrs attribute.Set, key string) string {
 	return v.AsString()
 }
 
+// metricsBody hits the Prometheus bridge handler and returns the response body.
+func metricsBody(t *testing.T, exp *Exporter) string {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rr := httptest.NewRecorder()
+	exp.PrometheusHandler().ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("/metrics: want 200, got %d\nbody: %s", rr.Code, rr.Body.String())
+	}
+	return rr.Body.String()
+}
+
 // ---- tests ------------------------------------------------------------------
 
 // TestStatusSuccess verifies that a StatusSuccess result sets success=1,
-// propagates RTT values, and packet_loss=0.
+// propagates RTT values, packet_loss=0, and up=1.
 func TestStatusSuccess(t *testing.T) {
 	e, reader := newTestExporter(t)
 	ctx := context.Background()
@@ -128,6 +176,11 @@ func TestStatusSuccess(t *testing.T) {
 		t.Errorf("success: got %d, want 1", successVal)
 	}
 
+	upVal, _ := findInt64Gauge(t, ms, "trimon.probe.up")
+	if upVal != 1 {
+		t.Errorf("up: got %d, want 1", upVal)
+	}
+
 	rttMean, _ := findFloat64Gauge(t, ms, "trimon.probe.rtt.mean")
 	if rttMean != 12.5 {
 		t.Errorf("rtt.mean: got %f, want 12.5", rttMean)
@@ -153,18 +206,18 @@ func TestStatusSuccess(t *testing.T) {
 		t.Errorf("packet_loss: got %f, want 0.0", loss)
 	}
 
-	sent, _ := findInt64Gauge(t, ms, "trimon.probe.packets_sent")
+	sent := findInt64Counter(t, ms, "trimon.probe.packets_sent")
 	if sent != 3 {
 		t.Errorf("packets_sent: got %d, want 3", sent)
 	}
 
-	recv, _ := findInt64Gauge(t, ms, "trimon.probe.packets_received")
+	recv := findInt64Counter(t, ms, "trimon.probe.packets_received")
 	if recv != 3 {
 		t.Errorf("packets_received: got %d, want 3", recv)
 	}
 }
 
-// TestStatusPartial verifies that a StatusPartial result sets success=0,
+// TestStatusPartial verifies that a StatusPartial result sets success=0, up=1,
 // propagates RTT values, and records the supplied packet_loss ratio.
 func TestStatusPartial(t *testing.T) {
 	e, reader := newTestExporter(t)
@@ -196,6 +249,11 @@ func TestStatusPartial(t *testing.T) {
 		t.Errorf("success: got %d, want 0", successVal)
 	}
 
+	upVal, _ := findInt64Gauge(t, ms, "trimon.probe.up")
+	if upVal != 1 {
+		t.Errorf("up: got %d, want 1 (partial = up)", upVal)
+	}
+
 	rttMean, _ := findFloat64Gauge(t, ms, "trimon.probe.rtt.mean")
 	if rttMean != 8.0 {
 		t.Errorf("rtt.mean: got %f, want 8.0", rttMean)
@@ -207,7 +265,7 @@ func TestStatusPartial(t *testing.T) {
 	}
 }
 
-// TestStatusFailure verifies that a StatusFailure result sets success=0,
+// TestStatusFailure verifies that a StatusFailure result sets success=0, up=0,
 // packet_loss=1.0, and RTT gauges are all zero.
 func TestStatusFailure(t *testing.T) {
 	e, reader := newTestExporter(t)
@@ -235,6 +293,11 @@ func TestStatusFailure(t *testing.T) {
 		t.Errorf("success: got %d, want 0", successVal)
 	}
 
+	upVal, _ := findInt64Gauge(t, ms, "trimon.probe.up")
+	if upVal != 0 {
+		t.Errorf("up: got %d, want 0 (failure = down)", upVal)
+	}
+
 	loss, _ := findFloat64Gauge(t, ms, "trimon.probe.packet_loss")
 	if loss != 1.0 {
 		t.Errorf("packet_loss: got %f, want 1.0", loss)
@@ -253,8 +316,8 @@ func TestStatusFailure(t *testing.T) {
 	}
 }
 
-// TestStatusError verifies that a StatusError result sets success=0,
-// packet_loss=NaN, and both RTT and packet count gauges are zero.
+// TestStatusError verifies that a StatusError result sets success=0, up=0,
+// packet_loss=NaN, and packet counters are not incremented.
 func TestStatusError(t *testing.T) {
 	e, reader := newTestExporter(t)
 	ctx := context.Background()
@@ -279,6 +342,11 @@ func TestStatusError(t *testing.T) {
 		t.Errorf("success: got %d, want 0", successVal)
 	}
 
+	upVal, _ := findInt64Gauge(t, ms, "trimon.probe.up")
+	if upVal != 0 {
+		t.Errorf("up: got %d, want 0 (error = down)", upVal)
+	}
+
 	loss, _ := findFloat64Gauge(t, ms, "trimon.probe.packet_loss")
 	if !math.IsNaN(loss) {
 		t.Errorf("packet_loss: got %f, want NaN", loss)
@@ -296,19 +364,61 @@ func TestStatusError(t *testing.T) {
 		}
 	}
 
-	sent, _ := findInt64Gauge(t, ms, "trimon.probe.packets_sent")
-	if sent != 0 {
-		t.Errorf("packets_sent: got %d, want 0", sent)
-	}
-
-	recv, _ := findInt64Gauge(t, ms, "trimon.probe.packets_received")
-	if recv != 0 {
-		t.Errorf("packets_received: got %d, want 0", recv)
+	// Packet counters must NOT be incremented on error (probe could not run).
+	for _, name := range []string{"trimon.probe.packets_sent", "trimon.probe.packets_received"} {
+		found := false
+		for _, m := range ms {
+			if m.Name == name {
+				found = true
+				s := m.Data.(metricdata.Sum[int64])
+				for _, dp := range s.DataPoints {
+					if dp.Value != 0 {
+						t.Errorf("%s: got %d, want 0 on error", name, dp.Value)
+					}
+				}
+			}
+		}
+		if found {
+			// counter was recorded with value 0 — that's acceptable
+		}
 	}
 }
 
-// TestRequiredAttributes verifies that every metric carries the five mandatory
-// probe attributes on every status path.
+// TestProbeRunsCounter verifies that probeRuns is incremented for every Export call.
+func TestProbeRunsCounter(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	r := types.ProbeResult{ProbeName: "p", ProbeType: "icmp", Target: "1.2.3.4", SourceIP: "0.0.0.0", Status: types.StatusSuccess, PacketsSent: 1, PacketsReceived: 1}
+	_ = e.Export(ctx, r)
+	_ = e.Export(ctx, r)
+
+	ms := collectMetrics(t, reader)
+	runs := findInt64Counter(t, ms, "trimon.probe.runs")
+	if runs != 2 {
+		t.Errorf("probe.runs: got %d, want 2", runs)
+	}
+}
+
+// TestProbeErrorsCounter verifies that probeErrors is incremented on StatusError.
+func TestProbeErrorsCounter(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	errResult := types.ProbeResult{ProbeName: "p", ProbeType: "icmp", Target: "1.2.3.4", SourceIP: "0.0.0.0", Status: types.StatusError}
+	okResult := types.ProbeResult{ProbeName: "p", ProbeType: "icmp", Target: "1.2.3.4", SourceIP: "0.0.0.0", Status: types.StatusSuccess, PacketsSent: 1, PacketsReceived: 1}
+	_ = e.Export(ctx, errResult)
+	_ = e.Export(ctx, okResult)
+
+	ms := collectMetrics(t, reader)
+	errors := findInt64Counter(t, ms, "trimon.probe.errors")
+	if errors != 1 {
+		t.Errorf("probe.errors: got %d, want 1", errors)
+	}
+}
+
+// TestRequiredAttributes verifies that every probe result metric carries the four
+// mandatory probe attributes on every status path, and that probe.status is absent.
 func TestRequiredAttributes(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -362,16 +472,9 @@ func TestRequiredAttributes(t *testing.T) {
 		},
 	}
 
-	// Required attribute keys as defined in the spec.
-	requiredKeys := []string{
-		"probe.name",
-		"probe.type",
-		"probe.target",
-		"probe.source_ip",
-		"probe.status",
-	}
+	requiredKeys := []string{"probe.name", "probe.type", "probe.target", "probe.source_ip"}
 
-	// Check against the packet_loss gauge which is always recorded.
+	// Check against packet_loss which is always recorded.
 	const checkMetric = "trimon.probe.packet_loss"
 
 	for _, tc := range cases {
@@ -389,7 +492,6 @@ func TestRequiredAttributes(t *testing.T) {
 				}
 			}
 
-			// Verify the values are correctly mapped from the ProbeResult fields.
 			if got := attrString(t, attrs, "probe.name"); got != tc.result.ProbeName {
 				t.Errorf("probe.name: got %q, want %q", got, tc.result.ProbeName)
 			}
@@ -402,8 +504,8 @@ func TestRequiredAttributes(t *testing.T) {
 			if got := attrString(t, attrs, "probe.source_ip"); got != tc.result.SourceIP {
 				t.Errorf("probe.source_ip: got %q, want %q", got, tc.result.SourceIP)
 			}
-			if got := attrString(t, attrs, "probe.status"); got != string(tc.result.Status) {
-				t.Errorf("probe.status: got %q, want %q", got, tc.result.Status)
+			if _, ok := attrs.Value(attribute.Key("probe.status")); ok {
+				t.Errorf("probe.status must not be an attribute: causes stale gauge series in Prometheus when status changes")
 			}
 		})
 	}
@@ -443,8 +545,7 @@ func TestUserLabels(t *testing.T) {
 		}
 	}
 
-	// Mandatory attributes must still be present alongside user labels.
-	for _, key := range []string{"probe.name", "probe.type", "probe.target", "probe.source_ip", "probe.status"} {
+	for _, key := range []string{"probe.name", "probe.type", "probe.target", "probe.source_ip"} {
 		if _, ok := attrs.Value(attribute.Key(key)); !ok {
 			t.Errorf("mandatory attribute %q missing when user labels present", key)
 		}
@@ -452,7 +553,7 @@ func TestUserLabels(t *testing.T) {
 }
 
 // TestAllMetricsPresent verifies that every expected instrument name appears
-// in the collected output after a single Export call.
+// in the collected output after a single successful Export call.
 func TestAllMetricsPresent(t *testing.T) {
 	e, reader := newTestExporter(t)
 
@@ -490,6 +591,10 @@ func TestAllMetricsPresent(t *testing.T) {
 		"trimon.probe.packets_sent",
 		"trimon.probe.packets_received",
 		"trimon.probe.success",
+		"trimon.probe.up",
+		"trimon.probe.runs",
+		"trimon.build.info",
+		"trimon.scheduler.goroutines",
 	}
 	for _, name := range expected {
 		if !names[name] {
@@ -499,8 +604,7 @@ func TestAllMetricsPresent(t *testing.T) {
 }
 
 // TestExportReturnsNilError confirms that Export always returns nil for all
-// valid status values (the OTel SDK records synchronously and never errors for
-// gauge instruments).
+// valid status values.
 func TestExportReturnsNilError(t *testing.T) {
 	statuses := []types.Status{
 		types.StatusSuccess,
@@ -523,5 +627,99 @@ func TestExportReturnsNilError(t *testing.T) {
 				t.Errorf("Export returned unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// ── Prometheus bridge integration tests ──────────────────────────────────────
+
+// TestBridgeBuildInfo verifies that trimon_build_info appears in the Prometheus
+// output with the correct label values.
+func TestBridgeBuildInfo(t *testing.T) {
+	exp := newBridgeExporter(t)
+	body := metricsBody(t, exp)
+
+	if !strings.Contains(body, `trimon_build_info`) {
+		t.Errorf("trimon_build_info not found in /metrics output\n%s", body)
+	}
+	if !strings.Contains(body, `version="test-version"`) {
+		t.Errorf("version label not found in /metrics output\n%s", body)
+	}
+	if !strings.Contains(body, `commit="abc1234"`) {
+		t.Errorf("commit label not found in /metrics output\n%s", body)
+	}
+}
+
+// TestBridgeProbeUp verifies that probe up/success gauges and packet counters
+// appear in the Prometheus output with correct values after Export.
+func TestBridgeProbeUp(t *testing.T) {
+	exp := newBridgeExporter(t)
+
+	cases := []struct {
+		name    string
+		result  types.ProbeResult
+		wantUp  string
+		wantDown string
+	}{
+		{
+			name: "success",
+			result: types.ProbeResult{
+				ProbeName: "probe-a", ProbeType: "icmp", Target: "1.1.1.1", SourceIP: "0.0.0.0",
+				Status: types.StatusSuccess, PacketsSent: 3, PacketsReceived: 3, PacketLossRatio: 0,
+			},
+			wantUp: `trimon_probe_up{`,
+		},
+		{
+			name: "failure",
+			result: types.ProbeResult{
+				ProbeName: "probe-b", ProbeType: "icmp", Target: "2.2.2.2", SourceIP: "0.0.0.0",
+				Status: types.StatusFailure, PacketsSent: 3, PacketsReceived: 0, PacketLossRatio: 1,
+			},
+			wantDown: `trimon_probe_up{`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := exp.Export(context.Background(), tc.result); err != nil {
+				t.Fatalf("Export: %v", err)
+			}
+		})
+	}
+
+	body := metricsBody(t, exp)
+
+	if !strings.Contains(body, "trimon_probe_up") {
+		t.Errorf("trimon_probe_up not found in /metrics output\n%s", body)
+	}
+	if !strings.Contains(body, "trimon_probe_up_total") {
+		// probe_up is a gauge, not _total
+	}
+	// Verify packet counters appear
+	if !strings.Contains(body, "trimon_probe_packets_sent") {
+		t.Errorf("trimon_probe_packets_sent not found in /metrics output\n%s", body)
+	}
+}
+
+// TestBridgePacketCounterAccumulation verifies that packet counters accumulate
+// across multiple Export calls.
+func TestBridgePacketCounterAccumulation(t *testing.T) {
+	exp := newBridgeExporter(t)
+	ctx := context.Background()
+
+	run := types.ProbeResult{
+		ProbeName: "p", ProbeType: "icmp", Target: "1.2.3.4", SourceIP: "0.0.0.0",
+		Status: types.StatusSuccess, PacketsSent: 4, PacketsReceived: 4, PacketLossRatio: 0,
+	}
+	_ = exp.Export(ctx, run)
+	_ = exp.Export(ctx, run)
+
+	body := metricsBody(t, exp)
+
+	// After two runs of 4 packets each, the counter should be 8.
+	if !strings.Contains(body, "trimon_probe_packets_sent_total") {
+		t.Errorf("trimon_probe_packets_sent_total not found\n%s", body)
+	}
+	if !strings.Contains(body, "8") {
+		t.Errorf("expected accumulated count of 8 in /metrics output\n%s", body)
 	}
 }

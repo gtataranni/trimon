@@ -59,14 +59,24 @@ func main() {
 		}
 	}
 
-	srv := server.New(cfg.Server.Listen, version, commit)
+	// Telemetry exporter — always created; Prometheus bridge is always active,
+	// OTLP transport is added when cfg.Exporters.OTLP.Enabled is true.
+	exp, err := otlpexp.New(context.Background(), cfg.Exporters.OTLP, version, commit, logger)
+	if err != nil {
+		logger.Error("failed to create telemetry exporter", "error", err)
+		os.Exit(1)
+	}
 
-	exporters, closeExporters := buildExporters(context.Background(), cfg, srv, logger, version)
+	srv := server.New(cfg.Server.Listen)
+	srv.SetMetricsHandler(exp.PrometheusHandler())
+	srv.UpdateConfig(cfg)
+
+	exporters := buildExporters(cfg, exp, logger)
 	pipe := pipeline.New(exporters, logger)
 
 	sched := scheduler.New(probeFactory, pipe.Results(), logger)
-	srv.SetScheduler(sched)
-	srv.UpdateConfig(cfg)
+	exp.SetGoroutinesGetter(sched.WorkerCount)
+
 	srv.SetReloadFunc(func() (*config.Config, error) {
 		newCfg, loadErr := config.Load(*configPath)
 		if loadErr != nil {
@@ -74,7 +84,7 @@ func main() {
 		}
 		sched.Reload(newCfg.Probes)
 		srv.UpdateConfig(newCfg)
-		srv.Metrics().ConfigReloadTotal.Inc()
+		exp.RecordConfigReload(context.Background())
 		logger.Info("config reloaded", "probes", len(newCfg.Probes))
 		return newCfg, nil
 	})
@@ -100,40 +110,20 @@ func main() {
 	sched.Stop()
 	cancel()
 	pipe.Wait()
-	closeExporters()
+	if err := exp.Close(); err != nil {
+		logger.Error("exporter close error", "error", err)
+	}
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutCancel()
 	_ = srv.Shutdown(shutCtx)
 }
 
-func buildExporters(ctx context.Context, cfg *config.Config, srv *server.Server, logger *slog.Logger, version string) ([]exporter.Exporter, func()) {
-	var list []exporter.Exporter
-	var closers []func() error
-
-	list = append(list, &metricsExporter{srv: srv})
-
+func buildExporters(cfg *config.Config, exp *otlpexp.Exporter, logger *slog.Logger) []exporter.Exporter {
+	list := []exporter.Exporter{exp}
 	if cfg.Exporters.Stdout.Enabled {
 		list = append(list, stdoutexp.New(cfg.Exporters.Stdout.Format))
 	}
-
-	if cfg.Exporters.OTLP.Enabled {
-		oe, err := otlpexp.New(ctx, cfg.Exporters.OTLP, version, logger)
-		if err != nil {
-			logger.Error("failed to create OTLP exporter", "error", err)
-		} else {
-			list = append(list, oe)
-			closers = append(closers, oe.Close)
-		}
-	}
-
-	closeAll := func() {
-		for _, fn := range closers {
-			if err := fn(); err != nil {
-				logger.Error("exporter close error", "error", err)
-			}
-		}
-	}
-	return list, closeAll
+	return list
 }
 
 func buildLogger(level, format string) *slog.Logger {
@@ -157,15 +147,3 @@ func buildLogger(level, format string) *slog.Logger {
 	}
 	return slog.New(handler)
 }
-
-// metricsExporter increments Prometheus counters for each result.
-type metricsExporter struct {
-	srv *server.Server
-}
-
-func (m *metricsExporter) Export(_ context.Context, r types.ProbeResult) error {
-	m.srv.RecordResult(r)
-	return nil
-}
-
-func (m *metricsExporter) Close() error { return nil }

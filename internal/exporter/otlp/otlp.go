@@ -7,12 +7,17 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"os"
+	"runtime"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -25,28 +30,37 @@ import (
 
 const instrScope = "github.com/gtataranni/trimon"
 
-// Exporter ships ProbeResults as OTel metrics via OTLP gRPC or HTTP.
+// Exporter is the unified telemetry exporter for trimon.
+// It ships probe results and self-observability metrics to both:
+//   - a Prometheus /metrics endpoint via the OTel Prometheus bridge (always active)
+//   - an OTLP collector via gRPC or HTTP (when cfg.Enabled is true)
 type Exporter struct {
-	provider *sdkmetric.MeterProvider
-	logger   *slog.Logger
+	provider    *sdkmetric.MeterProvider
+	promHandler http.Handler
+	logger      *slog.Logger
 
-	rttMin      metric.Float64Gauge
-	rttMean     metric.Float64Gauge
-	rttMax      metric.Float64Gauge
-	rttStddev   metric.Float64Gauge
-	packetLoss  metric.Float64Gauge
-	pktSent     metric.Int64Gauge
-	pktReceived metric.Int64Gauge
-	success     metric.Int64Gauge
+	// probe result instruments — recorded on every Export call
+	rttMin, rttMean, rttMax, rttStddev metric.Float64Gauge
+	packetLoss                         metric.Float64Gauge
+	pktSent                            metric.Int64Counter
+	pktReceived                        metric.Int64Counter
+	success                            metric.Int64Gauge
+	probeUp                            metric.Int64Gauge
+
+	// self-observability instruments
+	probeRuns     metric.Int64Counter
+	probeErrors   metric.Int64Counter
+	configReloads metric.Int64Counter
+
+	// set once before first scrape via SetGoroutinesGetter
+	getGoroutines func() int
 }
 
-// New creates and starts an OTLP Exporter using cfg.
-// version is the build-time version string embedded in the resource.
-func New(ctx context.Context, cfg config.OTLPExporterConfig, version string, logger *slog.Logger) (*Exporter, error) {
-	exp, err := buildExporter(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("otlp: build exporter: %w", err)
-	}
+// New creates the unified telemetry Exporter.
+// The Prometheus bridge reader is always registered; the OTLP reader is added
+// only when cfg.Enabled is true.
+func New(ctx context.Context, cfg config.OTLPExporterConfig, version, commit string, logger *slog.Logger) (*Exporter, error) {
+	e := &Exporter{logger: logger}
 
 	hostname, _ := os.Hostname()
 	res, err := resource.New(ctx,
@@ -60,29 +74,64 @@ func New(ctx context.Context, cfg config.OTLPExporterConfig, version string, log
 		return nil, fmt.Errorf("otlp: build resource: %w", err)
 	}
 
-	reader := sdkmetric.NewPeriodicReader(exp,
-		sdkmetric.WithInterval(cfg.Batch.ExportInterval),
-		sdkmetric.WithTimeout(cfg.Batch.ExportTimeout),
+	// Prometheus bridge — always active; serves /metrics
+	reg := prometheus.NewRegistry()
+	promExp, err := promexporter.New(
+		promexporter.WithRegisterer(reg),
+		promexporter.WithoutTargetInfo(),
+		promexporter.WithoutScopeInfo(),
 	)
+	if err != nil {
+		return nil, fmt.Errorf("otlp: build prometheus bridge: %w", err)
+	}
+	e.promHandler = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 
-	provider := sdkmetric.NewMeterProvider(
+	opts := []sdkmetric.Option{
 		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(reader),
-	)
+		sdkmetric.WithReader(promExp),
+	}
+
+	// OTLP reader — only when configured
+	if cfg.Enabled {
+		otlpExp, err := buildExporter(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("otlp: build OTLP exporter: %w", err)
+		}
+		opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(otlpExp,
+			sdkmetric.WithInterval(cfg.Batch.ExportInterval),
+			sdkmetric.WithTimeout(cfg.Batch.ExportTimeout),
+		)))
+	}
+
+	provider := sdkmetric.NewMeterProvider(opts...)
+	e.provider = provider
 
 	meter := provider.Meter(instrScope)
-
-	e := &Exporter{provider: provider, logger: logger}
-	if err := e.registerInstruments(meter); err != nil {
+	if err := e.registerInstruments(meter, version, commit); err != nil {
 		_ = provider.Shutdown(ctx)
 		return nil, fmt.Errorf("otlp: register instruments: %w", err)
 	}
+
 	return e, nil
 }
 
-func (e *Exporter) registerInstruments(meter metric.Meter) error {
+// PrometheusHandler returns the http.Handler that serves /metrics.
+func (e *Exporter) PrometheusHandler() http.Handler { return e.promHandler }
+
+// SetGoroutinesGetter registers the function called on each /metrics scrape to
+// report the live scheduler goroutine count. Must be called before the HTTP
+// server starts.
+func (e *Exporter) SetGoroutinesGetter(f func() int) { e.getGoroutines = f }
+
+// RecordConfigReload increments the config-reload counter.
+func (e *Exporter) RecordConfigReload(ctx context.Context) {
+	e.configReloads.Add(ctx, 1)
+}
+
+func (e *Exporter) registerInstruments(meter metric.Meter, version, commit string) error {
 	var err error
 
+	// probe result gauges
 	e.rttMin, err = meter.Float64Gauge("trimon.probe.rtt.min", metric.WithUnit("ms"))
 	if err != nil {
 		return err
@@ -103,32 +152,94 @@ func (e *Exporter) registerInstruments(meter metric.Meter) error {
 	if err != nil {
 		return err
 	}
-	e.pktSent, err = meter.Int64Gauge("trimon.probe.packets_sent", metric.WithUnit("{packets}"))
+	e.success, err = meter.Int64Gauge("trimon.probe.success")
 	if err != nil {
 		return err
 	}
-	e.pktReceived, err = meter.Int64Gauge("trimon.probe.packets_received", metric.WithUnit("{packets}"))
+	e.probeUp, err = meter.Int64Gauge("trimon.probe.up")
 	if err != nil {
 		return err
 	}
-	e.success, err = meter.Int64Gauge("trimon.probe.success") // will be visible as trimon_probe_success
+
+	// probe result counters (cumulative, monotonically increasing)
+	e.pktSent, err = meter.Int64Counter("trimon.probe.packets_sent", metric.WithUnit("{packets}"))
 	if err != nil {
 		return err
 	}
+	e.pktReceived, err = meter.Int64Counter("trimon.probe.packets_received", metric.WithUnit("{packets}"))
+	if err != nil {
+		return err
+	}
+
+	// self-observability counters
+	e.probeRuns, err = meter.Int64Counter("trimon.probe.runs", metric.WithUnit("{runs}"))
+	if err != nil {
+		return err
+	}
+	e.probeErrors, err = meter.Int64Counter("trimon.probe.errors", metric.WithUnit("{errors}"))
+	if err != nil {
+		return err
+	}
+	e.configReloads, err = meter.Int64Counter("trimon.config.reloads", metric.WithUnit("{reloads}"))
+	if err != nil {
+		return err
+	}
+
+	// build info — static observable gauge, reported on every scrape
+	buildInfoGauge, err := meter.Int64ObservableGauge("trimon.build.info")
+	if err != nil {
+		return err
+	}
+	if _, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		o.ObserveInt64(buildInfoGauge, 1, metric.WithAttributes(
+			attribute.String("version", version),
+			attribute.String("commit", commit),
+			attribute.String("goversion", runtime.Version()),
+		))
+		return nil
+	}, buildInfoGauge); err != nil {
+		return err
+	}
+
+	// scheduler goroutines — live observable gauge
+	goroutinesGauge, err := meter.Int64ObservableGauge("trimon.scheduler.goroutines",
+		metric.WithUnit("{goroutines}"))
+	if err != nil {
+		return err
+	}
+	if _, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		var count int64
+		if e.getGoroutines != nil {
+			count = int64(e.getGoroutines())
+		}
+		o.ObserveInt64(goroutinesGauge, count)
+		return nil
+	}, goroutinesGauge); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// Export records one ProbeResult as gauge observations.
-// The OTel SDK periodic reader will flush these to the collector on its own schedule.
+// Export records one ProbeResult as metric observations.
+// The OTel SDK delivers these to both the Prometheus bridge and the OTLP
+// collector (when configured).
 func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
-	attrs := buildAttrs(r)
+	probeAttrs := buildAttrs(r)
+	nameAttr := metric.WithAttributes(attribute.String("probe.name", r.ProbeName))
+
+	e.probeRuns.Add(ctx, 1, nameAttr)
 
 	var (
 		rttMin, rttMean, rttMax, rttStddev float64
-		pktSent, pktRecv                   int64
 		packetLoss                         float64
-		successVal                         int64
+		successVal, upVal                  int64
 	)
+
+	if r.Status != types.StatusError {
+		e.pktSent.Add(ctx, int64(r.PacketsSent), probeAttrs)
+		e.pktReceived.Add(ctx, int64(r.PacketsReceived), probeAttrs)
+	}
 
 	switch r.Status {
 	case types.StatusSuccess, types.StatusPartial:
@@ -136,9 +247,8 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		rttMean = r.RTTMeanMS
 		rttMax = r.RTTMaxMS
 		rttStddev = r.RTTStddevMS
-		pktSent = int64(r.PacketsSent)
-		pktRecv = int64(r.PacketsReceived)
 		packetLoss = r.PacketLossRatio
+		upVal = 1
 		if r.Status == types.StatusSuccess {
 			successVal = 1
 		}
@@ -146,16 +256,19 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		packetLoss = 1.0
 	case types.StatusError:
 		packetLoss = math.NaN()
+		e.probeErrors.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("probe.name", r.ProbeName),
+			attribute.String("error.type", "probe_error"),
+		))
 	}
 
-	e.rttMin.Record(ctx, rttMin, attrs)
-	e.rttMean.Record(ctx, rttMean, attrs)
-	e.rttMax.Record(ctx, rttMax, attrs)
-	e.rttStddev.Record(ctx, rttStddev, attrs)
-	e.packetLoss.Record(ctx, packetLoss, attrs)
-	e.pktSent.Record(ctx, pktSent, attrs)
-	e.pktReceived.Record(ctx, pktRecv, attrs)
-	e.success.Record(ctx, successVal, attrs)
+	e.rttMin.Record(ctx, rttMin, probeAttrs)
+	e.rttMean.Record(ctx, rttMean, probeAttrs)
+	e.rttMax.Record(ctx, rttMax, probeAttrs)
+	e.rttStddev.Record(ctx, rttStddev, probeAttrs)
+	e.packetLoss.Record(ctx, packetLoss, probeAttrs)
+	e.success.Record(ctx, successVal, probeAttrs)
+	e.probeUp.Record(ctx, upVal, probeAttrs)
 
 	return nil
 }
@@ -171,13 +284,12 @@ func (e *Exporter) Close() error {
 }
 
 func buildAttrs(r types.ProbeResult) metric.MeasurementOption {
-	kv := make([]attribute.KeyValue, 0, 5+len(r.Labels))
+	kv := make([]attribute.KeyValue, 0, 4+len(r.Labels))
 	kv = append(kv,
 		attribute.String("probe.name", r.ProbeName),
 		attribute.String("probe.type", r.ProbeType),
 		attribute.String("probe.target", r.Target),
 		attribute.String("probe.source_ip", r.SourceIP),
-		attribute.String("probe.status", string(r.Status)),
 	)
 	for k, v := range r.Labels {
 		kv = append(kv, attribute.String(k, v))

@@ -79,13 +79,33 @@ See [config.example.yaml](config.example.yaml).
 
 ### Prometheus metrics
 
+All metrics are served via the OTel Prometheus bridge. Instruments are defined once in
+`internal/exporter/otlp/otlp.go` and exported to both `/metrics` and an optional OTLP
+collector simultaneously.
+
+**Probe result metrics** (attributes: `probe.name`, `probe.type`, `probe.target`, `probe.source_ip`, user labels):
+
+| Metric | Type | Notes |
+|--------|------|-------|
+| `trimon_probe_rtt_min_milliseconds` | Gauge | 0 on failure/error |
+| `trimon_probe_rtt_mean_milliseconds` | Gauge | 0 on failure/error |
+| `trimon_probe_rtt_max_milliseconds` | Gauge | 0 on failure/error |
+| `trimon_probe_rtt_stddev_milliseconds` | Gauge | 0 on failure/error |
+| `trimon_probe_packet_loss_ratio` | Gauge | 1.0 on failure, NaN on error |
+| `trimon_probe_packets_sent_total` | Counter | not incremented on error |
+| `trimon_probe_packets_received_total` | Counter | not incremented on error |
+| `trimon_probe_success` | Gauge | 1 if all packets replied |
+| `trimon_probe_up` | Gauge | 1 if ≥1 reply; use this for alerting |
+
+**Self-observability metrics:**
+
 | Metric | Type | Labels |
 |--------|------|--------|
 | `trimon_build_info` | Gauge | `version`, `commit`, `goversion` |
-| `trimon_probe_runs_total` | Counter | `probe_name`, `status` |
-| `trimon_probe_errors_total` | Counter | `probe_name`, `error_type` |
+| `trimon_probe_runs_total` | Counter | `probe.name` |
+| `trimon_probe_errors_total` | Counter | `probe.name`, `error.type` |
 | `trimon_scheduler_goroutines` | Gauge | — |
-| `trimon_config_reload_total` | Counter | — |
+| `trimon_config_reloads_total` | Counter | — |
 
 ---
 

@@ -3,117 +3,29 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"net/http"
-	"runtime"
 	"sync"
 	"sync/atomic"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 
 	"github.com/gtataranni/trimon/internal/config"
-	"github.com/gtataranni/trimon/pkg/types"
 )
-
-// Metrics holds all Prometheus instruments exposed on /metrics:
-// probe result gauges/counters and trimon operational self-observability.
-type Metrics struct {
-	BuildInfo                *prometheus.GaugeVec
-	ProbeRunsTotal           *prometheus.CounterVec
-	ProbePacketsSentTotal    *prometheus.CounterVec
-	ProbePacketsReceivedTotal *prometheus.CounterVec
-	ProbeUp                  *prometheus.GaugeVec
-	ProbePacketLossRatio     *prometheus.GaugeVec
-	ProbeErrorsTotal         *prometheus.CounterVec
-	SchedulerGoroutines      prometheus.Gauge
-	ConfigReloadTotal        prometheus.Counter
-}
 
 // Server is the internal HTTP server exposing /healthz, /metrics, /reload, and /config.
 type Server struct {
-	httpServer *http.Server
-	metrics    *Metrics
-	reg        *prometheus.Registry
-	scheduler  GoroutineGetter
+	httpServer     *http.Server
+	metricsHandler http.Handler
 
 	reloadMu   sync.Mutex
 	reloadFunc func() (*config.Config, error)
 	currentCfg atomic.Pointer[config.Config]
 }
 
-// GoroutineGetter is implemented by the Scheduler to report live worker count.
-type GoroutineGetter interface {
-	WorkerCount() int
-}
-
-// New registers metrics, wires up routes, and returns a ready-to-serve Server.
-// Call SetScheduler, SetReloadFunc, and UpdateConfig before Start.
-func New(listenAddr string, version, commit string) *Server {
-	reg := prometheus.NewRegistry()
-
-	m := &Metrics{
-		BuildInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "trimon_build_info",
-			Help: "Build metadata.",
-		}, []string{"version", "commit", "goversion"}),
-
-		ProbeRunsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "trimon_probe_runs_total",
-			Help: "Total probe runs, partitioned by probe_name.",
-		}, []string{"probe_name"}),
-
-		ProbePacketsSentTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "trimon_probe_packets_sent_total",
-			Help: "Cumulative packets sent, partitioned by probe_name.",
-		}, []string{"probe_name"}),
-
-		ProbePacketsReceivedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "trimon_probe_packets_received_total",
-			Help: "Cumulative packets received, partitioned by probe_name.",
-		}, []string{"probe_name"}),
-
-		ProbeUp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "trimon_probe_up",
-			Help: "1 if at least one reply was received in the last run, 0 on total loss or error. See docs/metrics.md for protocol semantics.",
-		}, []string{"probe_name"}),
-
-		ProbePacketLossRatio: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "trimon_probe_packet_loss_ratio",
-			Help: "Packet loss fraction [0.0, 1.0] from the last completed probe run. NaN when status=error. See docs/metrics.md.",
-		}, []string{"probe_name"}),
-
-		ProbeErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "trimon_probe_errors_total",
-			Help: "Total probe errors, partitioned by probe_name and error_type.",
-		}, []string{"probe_name", "error_type"}),
-
-		SchedulerGoroutines: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "trimon_scheduler_goroutines",
-			Help: "Active probe goroutines managed by the scheduler.",
-		}),
-
-		ConfigReloadTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "trimon_config_reload_total",
-			Help: "Total successful config reloads.",
-		}),
-	}
-
-	reg.MustRegister(
-		m.BuildInfo,
-		m.ProbeRunsTotal,
-		m.ProbePacketsSentTotal,
-		m.ProbePacketsReceivedTotal,
-		m.ProbeUp,
-		m.ProbePacketLossRatio,
-		m.ProbeErrorsTotal,
-		m.SchedulerGoroutines,
-		m.ConfigReloadTotal,
-	)
-	m.BuildInfo.WithLabelValues(version, commit, runtime.Version()).Set(1)
-
-	s := &Server{metrics: m, reg: reg}
+// New wires up routes and returns a ready-to-serve Server.
+// Call SetMetricsHandler, SetReloadFunc, and UpdateConfig before Start.
+func New(listenAddr string) *Server {
+	s := &Server{}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -125,17 +37,15 @@ func New(listenAddr string, version, commit string) *Server {
 	return s
 }
 
-// SetScheduler wires a scheduler for goroutine-count reporting on /metrics.
-func (s *Server) SetScheduler(g GoroutineGetter) { s.scheduler = g }
+// SetMetricsHandler registers the handler that serves GET /metrics.
+// Must be called before Start.
+func (s *Server) SetMetricsHandler(h http.Handler) { s.metricsHandler = h }
 
 // SetReloadFunc registers the callback invoked by POST /reload.
 func (s *Server) SetReloadFunc(fn func() (*config.Config, error)) { s.reloadFunc = fn }
 
 // UpdateConfig replaces the config served by GET /config.
 func (s *Server) UpdateConfig(cfg *config.Config) { s.currentCfg.Store(cfg) }
-
-// Metrics returns the instruments so callers can increment counters.
-func (s *Server) Metrics() *Metrics { return s.metrics }
 
 // Start begins listening in the background.
 func (s *Server) Start() error {
@@ -148,27 +58,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// RecordResult updates probe result metrics and operational counters for r.
-func (s *Server) RecordResult(r types.ProbeResult) {
-	s.metrics.ProbeRunsTotal.WithLabelValues(r.ProbeName).Inc()
-
-	if r.Status != types.StatusError {
-		s.metrics.ProbePacketsSentTotal.WithLabelValues(r.ProbeName).Add(float64(r.PacketsSent))
-		s.metrics.ProbePacketsReceivedTotal.WithLabelValues(r.ProbeName).Add(float64(r.PacketsReceived))
-		s.metrics.ProbePacketLossRatio.WithLabelValues(r.ProbeName).Set(r.PacketLossRatio)
-
-		upVal := 0.0
-		if r.PacketLossRatio < 1.0 {
-			upVal = 1.0
-		}
-		s.metrics.ProbeUp.WithLabelValues(r.ProbeName).Set(upVal)
-	} else {
-		s.metrics.ProbeUp.WithLabelValues(r.ProbeName).Set(0.0)
-		s.metrics.ProbePacketLossRatio.WithLabelValues(r.ProbeName).Set(math.NaN())
-		s.metrics.ProbeErrorsTotal.WithLabelValues(r.ProbeName, "probe_error").Inc()
-	}
-}
-
 // ── handlers ─────────────────────────────────────────────────────────────────
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -176,10 +65,11 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	if s.scheduler != nil {
-		s.metrics.SchedulerGoroutines.Set(float64(s.scheduler.WorkerCount()))
+	if s.metricsHandler != nil {
+		s.metricsHandler.ServeHTTP(w, r)
+		return
 	}
-	promhttp.HandlerFor(s.reg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
+	http.NotFound(w, r)
 }
 
 func (s *Server) handleReload(w http.ResponseWriter, _ *http.Request) {

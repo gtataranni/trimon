@@ -22,8 +22,9 @@ It differs from `blackbox_exporter` in one key way: trimon runs an internal sche
 ### Core dependencies (keep this list small)
 - `golang.org/x/net/icmp` — raw ICMP
 - `gopkg.in/yaml.v3` — config parsing
-- `go.opentelemetry.io/otel` — OTel SDK (wired in from day 1, even with stdout-only export)
-- `github.com/prometheus/client_golang` — self-observability `/metrics` endpoint
+- `go.opentelemetry.io/otel` — OTel SDK; single `MeterProvider` drives both `/metrics` (via bridge) and optional OTLP push
+- `go.opentelemetry.io/otel/exporters/prometheus` — Prometheus bridge; converts OTel instruments to Prometheus text format at scrape time
+- `github.com/prometheus/client_golang` — pulled in transitively by the bridge; **do not define instruments directly against it**
 
 Do not add new dependencies without an explicit reason. Prefer the standard library.
 
@@ -45,9 +46,11 @@ Probing Workers ──── bind to source_ip
 Result Channel (buffered, fan-in)
     │
     ▼
-Exporter goroutine ──▶ stdout (v1) / OTLP (later)
+Exporter goroutine ──▶ stdout / OTLP (OTel SDK)
+                              │
+                              └──▶ Prometheus bridge ──▶ /metrics
 
-+ HTTP Server: /healthz, /metrics, some api features (TBD)
++ HTTP Server: /healthz, /metrics, /config, /reload
 ```
 
 ### Load-bearing abstractions
@@ -121,6 +124,7 @@ sudo setcap cap_net_raw+ep ./bin/trimon
 - **Tests:** table-driven. Required for `internal/config` (validation), `pkg/types`, `internal/scheduler` (lifecycle), `internal/exporter/stdout` (output shape).
 - **No global state** outside `cmd/trimon/main.go`.
 - **Commits:** conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
+- **Build**: use `bin/` as target dir, or use `make` commands
 
 ## Status semantics — get this right
 
@@ -137,24 +141,32 @@ A `ProbeResult.status` is one of:
 
 ## Metrics on `/metrics` (Prometheus text)
 
-Two categories live on the `/metrics` endpoint. Full design rationale and per-protocol
-semantics: **[docs/metrics.md](docs/metrics.md)**
+All instruments are defined once in `internal/exporter/otlp/otlp.go` via the OTel SDK.
+The Prometheus bridge converts them to Prometheus text format at scrape time. The same
+instruments also push to an OTel Collector when `exporters.otlp.enabled: true`.
+Full design rationale: **[docs/metrics.md](docs/metrics.md)**
+
+Probe attributes: `probe.name`, `probe.type`, `probe.target`, `probe.source_ip`, plus
+any user-defined labels from the probe config. `probe.status` is **never** an attribute
+(see docs/metrics.md for why).
 
 **Probe result metrics** — the actual measurements trimon produces:
-- `trimon_probe_up{probe_name}` — gauge, 1 if ≥1 reply received, 0 on total loss or error
-- `trimon_probe_packet_loss_ratio{probe_name}` — gauge 0.0–1.0, NaN on status=error
-- `trimon_probe_packets_sent_total{probe_name}` — counter
-- `trimon_probe_packets_received_total{probe_name}` — counter
+- `trimon_probe_rtt_min_milliseconds{...}` — gauge
+- `trimon_probe_rtt_mean_milliseconds{...}` — gauge
+- `trimon_probe_rtt_max_milliseconds{...}` — gauge
+- `trimon_probe_rtt_stddev_milliseconds{...}` — gauge
+- `trimon_probe_packet_loss_ratio{...}` — gauge, 0.0–1.0, NaN on status=error
+- `trimon_probe_packets_sent_total{...}` — counter (not incremented on error)
+- `trimon_probe_packets_received_total{...}` — counter (not incremented on error)
+- `trimon_probe_success{...}` — gauge, 1 only if all packets replied (status=success)
+- `trimon_probe_up{...}` — gauge, 1 if ≥1 reply received (status=success or partial)
 
 **Operational self-observability** — about trimon itself:
 - `trimon_build_info{version, commit, goversion}` — gauge, value 1
-- `trimon_probe_runs_total{probe_name}` — counter, **no status label** (see docs/metrics.md)
-- `trimon_probe_errors_total{probe_name, error_type}` — counter
+- `trimon_probe_runs_total{probe.name}` — counter
+- `trimon_probe_errors_total{probe.name, error.type}` — counter
 - `trimon_scheduler_goroutines` — gauge
-- `trimon_config_reload_total` — counter
-
-Full probe results (RTT distributions, all fields, user labels) go through the `Exporter`
-pipeline (stdout in v1 / OTLP in v2).
+- `trimon_config_reloads_total` — counter
 
 ---
 
