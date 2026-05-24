@@ -45,7 +45,7 @@ Goal: introduce target area as a way to group multiple targets.
 An area can be "the internet", or "the web server subnet" or "the private DNS servers in Europe".
 The area is considered reachable based on the probe result of all targets in the area.
 
-- [ ] Extend concept of target into target area, where an area can be defined by multiple ip4/6 addresses
+- [ ] Extend concept of target into target area, where an area can be defined by multiple ip4/6 addresses. This is very similar to task SEC-10, and can be solved together.
 - [ ] Results are available per IP target but also by target area
 
 ---
