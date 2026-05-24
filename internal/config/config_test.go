@@ -27,7 +27,7 @@ probes:
     type: icmp
     target: "127.0.0.1"
     probe_every: 10s
-    timeout: 2s
+    timeout: 6s
     count: 5
     labels:
       env: test
@@ -275,6 +275,222 @@ probes:
 	_, err := parse([]byte(yaml))
 	if err != nil {
 		t.Fatalf("expected no error for local source_ip, got: %v", err)
+	}
+}
+
+func TestProbeTimingBounds(t *testing.T) {
+	// Each case overrides one bound in a probe to verify the helper rejects
+	// values outside the accepted range. The base probe has valid defaults.
+	cases := []struct {
+		name      string
+		probeYAML string
+		wantErr   bool
+	}{
+		{
+			name: "packet_interval below 1ms is rejected",
+			probeYAML: `
+  - name: tooFast
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 500us
+`,
+			wantErr: true,
+		},
+		{
+			name: "packet_interval at exactly 1ms is accepted",
+			probeYAML: `
+  - name: minOK
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 1ms
+`,
+			wantErr: false,
+		},
+		// Cross-field: packet_interval * count < timeout
+		{
+			name: "packet_interval * count equal to timeout is rejected",
+			probeYAML: `
+  - name: piCountEqTimeout
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 1s
+    count: 5
+    timeout: 5s
+    probe_every: 30s
+`,
+			wantErr: true,
+		},
+		{
+			name: "packet_interval * count greater than timeout is rejected",
+			probeYAML: `
+  - name: piCountGtTimeout
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 1s
+    count: 5
+    timeout: 4s
+    probe_every: 30s
+`,
+			wantErr: true,
+		},
+		{
+			name: "packet_interval * count less than timeout is accepted",
+			probeYAML: `
+  - name: piCountLtTimeout
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 1s
+    count: 3
+    timeout: 5s
+    probe_every: 30s
+`,
+			wantErr: false,
+		},
+		// Cross-field: timeout < probe_every
+		{
+			name: "timeout equal to probe_every is rejected",
+			probeYAML: `
+  - name: timeoutEqInterval
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 100ms
+    count: 3
+    timeout: 30s
+    probe_every: 30s
+`,
+			wantErr: true,
+		},
+		{
+			name: "timeout greater than probe_every is rejected",
+			probeYAML: `
+  - name: timeoutGtInterval
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 100ms
+    count: 3
+    timeout: 35s
+    probe_every: 30s
+`,
+			wantErr: true,
+		},
+		{
+			name: "timeout less than probe_every is accepted",
+			probeYAML: `
+  - name: timeoutLtInterval
+    type: icmp
+    target: "127.0.0.1"
+    packet_interval: 100ms
+    count: 3
+    timeout: 5s
+    probe_every: 30s
+`,
+			wantErr: false,
+		},
+	}
+
+	baseProbe := `
+global:
+  probe_every: 1500s
+  packet_interval: 1s
+  timeout: 1200s
+  count: 3
+probes:`
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(baseProbe + tc.probeYAML))
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestGlobalTimingBounds(t *testing.T) {
+	// Verifies the helper is also wired into validateGlobal: an out-of-range
+	// global default must be rejected even when no probes are configured.
+	cases := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{
+			name: "global packet_interval below 1ms is rejected",
+			yaml: `
+global:
+  probe_every: 30s
+  packet_interval: 500us
+  timeout: 5s
+  count: 3
+probes: []
+`,
+			wantErr: true,
+		},
+		// Cross-field: packet_interval * count < timeout
+		{
+			name: "global packet_interval * count equal to timeout is rejected",
+			yaml: `
+global:
+  probe_every: 30s
+  packet_interval: 2s
+  timeout: 6s
+  count: 3
+probes: []
+`,
+			wantErr: true,
+		},
+		{
+			name: "global packet_interval * count greater than timeout is rejected",
+			yaml: `
+global:
+  probe_every: 30s
+  packet_interval: 2s
+  timeout: 5s
+  count: 3
+probes: []
+`,
+			wantErr: true,
+		},
+		// Cross-field: timeout < probe_every
+		{
+			name: "global timeout equal to probe_every is rejected",
+			yaml: `
+global:
+  probe_every: 30s
+  packet_interval: 1s
+  timeout: 30s
+  count: 3
+probes: []
+`,
+			wantErr: true,
+		},
+		{
+			name: "global timeout greater than probe_every is rejected",
+			yaml: `
+global:
+  probe_every: 30s
+  packet_interval: 1s
+  timeout: 35s
+  count: 3
+probes: []
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(tc.yaml))
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

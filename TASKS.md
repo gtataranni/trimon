@@ -74,7 +74,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-06 · HIGH — Add rate limiting to HTTP endpoints
-**Status:** OPEN  
+**Status:** IN PROGRESS  
 **Files:** `internal/server/server.go`  
 **Context:** Zero rate limiting means an attacker can flood `/reload` causing CPU spikes and log churn, or flood `/metrics` triggering the Prometheus encoder repeatedly. No external library needed — a simple token bucket using `time.Ticker` or `golang.org/x/time/rate` (stdlib-adjacent) is fine.  
 **Action:**
@@ -87,7 +87,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-07 · HIGH — Add bounds to PacketInterval and Count in config validation
-**Status:** OPEN  
+**Status:** DONE  
 **Depends on:** OPT-02 (add bounds inside the shared timing helper it creates, not in the two call sites separately)  
 **Files:** `internal/config/config.go` (lines ~242–250)  
 **Context:** `PacketInterval` accepts any positive value including `1ns`, which would cause the pinger to emit packets as fast as the kernel allows — potentially 100k+ packets/sec. `Count` has no upper bound, so `count: 1000000` is accepted.  
@@ -219,7 +219,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-02 · HIGH — Extract shared timing+count validation helper in config.go
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/config/config.go` (`validateGlobal` lines ~170–184, `mergeAndValidateProbes` lines ~239–250)  
 **Context:** Both functions independently validate that `Interval > 0`, `PacketInterval > 0`, `Timeout > 0`, `Count > 0`. Any change to validation rules (e.g., adding the bounds from SEC-07) must be made in two places.  
 **Action:**
@@ -347,6 +347,54 @@ Only begin coding once the design is confirmed.
 2. Pass `bufferSize` as a parameter to `pipeline.New()`.
 3. Update `main.go` to pass `cfg.Pipeline.BufferSize`.
 4. Update `config.example.yaml` with a commented-out example.
+
+---
+
+### OPT-13 · LOW — Unify probe timeout through context; remove pinger.Timeout from ICMP prober
+**Status:** OPEN  
+**Depends on:** none  
+**Files:** `internal/probe/icmp/icmp.go`, `internal/probe/icmp/icmp_test.go`  
+**Context:** The scheduler already wraps each probe run with `context.WithTimeout(ctx, cfg.Timeout)` (scheduler.go:121). The ICMP prober also sets `pinger.Timeout = p.cfg.Timeout`, creating a double timeout: whichever fires first wins, but both represent the same deadline. This redundancy means the timeout is set in two places with no clear single source of truth.
+
+The Prober interface contract should be: **the caller embeds the timeout in the context; Run() uses the context deadline as its sole stopping signal**. This makes future probe implementations (TCP, HTTP) follow a uniform pattern without needing to know about per-library timeout fields.
+
+Integration tests confirmed that `context.WithTimeout` cancellation produces the same partial-stats behaviour as `pinger.Timeout` — loss ratio is computed against actual packets sent, and the probe returns `StatusFailure` cleanly.
+
+**Action:**
+1. In `icmp.go`, remove the line `pinger.Timeout = p.cfg.Timeout`. The pinger will rely entirely on `RunWithContext(ctx)` for its deadline.
+2. Verify that pro-bing does not run forever when `pinger.Timeout == 0` and a context deadline is set. If it does, document this assumption with a comment.
+3. In `icmp_test.go`, update the two tests that use `context.Background()` to instead use `context.WithTimeout(context.Background(), cfg.Timeout)`, mirroring what the scheduler does. This ensures integration tests exercise the same code path as production.
+4. Add a comment to the `Run()` signature: the context must carry a deadline; callers that omit one will block until all packets are sent (no built-in fallback timeout).
+
+---
+
+### OPT-14 · MEDIUM — Add cross-field config invariant: timeout must be less than probe_every
+**Status:** DONE  
+**Depends on:** OPT-02 (DONE — the helper is the right place to add this)  
+**Files:** `internal/config/config.go` (`validateTimings`), `internal/config/config_test.go`  
+**Context:** Integration tests and scheduler code review resolved the cross-field invariant question. Findings:
+
+- `count * packet_interval > timeout`: **not a correctness concern**. Pro-bing sends however many packets fit within the deadline and computes loss against actual sent, not configured count. No phantom loss. No need to validate this.
+- `timeout >= interval` (`probe_every`): **a cadence concern**. The scheduler runs one goroutine per probe and blocks on `p.Run(runCtx)`. Go's `time.Ticker` buffers at most one missed tick, so the goroutine never accumulates — but the probe silently runs slower than configured. If `timeout >= interval`, the probe cannot possibly complete on schedule and the operator has no indication.
+- `count * packet_interval >= interval`: the probe's minimum duration exceeds the schedule. Same outcome as above (cadence degradation). This is implied by enforcing `timeout < interval` together with a reasonable probe budget, but worth a separate check for a clear error message.
+
+**Action:**
+1. In `validateTimings`, after the existing per-field checks, add:
+   ```go
+   if timeout >= interval {
+       return fmt.Errorf("timeout (%v) must be less than probe_every (%v); probe cannot complete on schedule", timeout, interval)
+   }
+   probeMinDuration := packetInterval * time.Duration(count)
+   if probeMinDuration >= interval {
+       return fmt.Errorf("packet_interval * count (%v) must be less than probe_every (%v); probe cannot complete on schedule", probeMinDuration, interval)
+   }
+   ```
+2. Note: `count * packetInterval > timeout` is intentionally **not** validated — pro-bing handles this gracefully (sends fewer packets, computes correct loss ratio).
+3. Add test cases to `TestProbeTimingBounds` and `TestGlobalTimingBounds`:
+   - `timeout >= probe_every` → rejected
+   - `count * packet_interval >= probe_every` → rejected
+   - A valid config where `count * packet_interval > timeout` → accepted (this is the non-obvious case; add a comment in the test explaining why it is allowed)
+4. The existing `TestParseValid` probe uses `count: 5, timeout: 2s, global packet_interval: 1s, probe_every: 10s`. With these checks: `timeout (2s) < interval (10s)` ✓ and `5 * 1s = 5s < 10s` ✓. No update needed.
 
 ---
 

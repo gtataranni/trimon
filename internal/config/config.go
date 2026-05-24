@@ -210,18 +210,41 @@ func parse(data []byte) (*Config, error) {
 	}, nil
 }
 
+// validateTimings checks the four timing/count fields shared between the global
+// defaults and each merged probe configuration. It enforces:
+//   - interval, timeout, count > 0
+//   - packetInterval >= 1ms
+//   - packet_interval * count < timeout  (all packets must fit within the probe budget)
+//   - timeout < interval                 (probe must complete before the next run is due)
+//   - packet_interval * count < interval is enforced implicitly as consequence
+//
+// The caller is expected to wrap returned errors with a "global." or
+// per-probe context prefix.
+func validateTimings(interval, packetInterval, timeout time.Duration, count int) error {
+	if interval <= 0 {
+		return errors.New("probe_every must be positive")
+	}
+	if packetInterval < time.Millisecond {
+		return errors.New("packet_interval must be >= 1ms")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	if count <= 0 {
+		return errors.New("count must be positive")
+	}
+	if minDuration := packetInterval * time.Duration(count); minDuration >= timeout {
+		return fmt.Errorf("packet_interval * count (%v) must be less than timeout (%v)", minDuration, timeout)
+	}
+	if timeout >= interval {
+		return fmt.Errorf("timeout (%v) must be less than probe_every (%v)", timeout, interval)
+	}
+	return nil
+}
+
 func validateGlobal(g GlobalConfig) error {
-	if g.Interval <= 0 {
-		return errors.New("global.probe_every must be positive")
-	}
-	if g.PacketInterval <= 0 {
-		return errors.New("global.packet_interval must be positive")
-	}
-	if g.Timeout <= 0 {
-		return errors.New("global.timeout must be positive")
-	}
-	if g.Count <= 0 {
-		return errors.New("global.count must be positive")
+	if err := validateTimings(g.Interval, g.PacketInterval, g.Timeout, g.Count); err != nil {
+		return fmt.Errorf("global.%w", err)
 	}
 	return nil
 }
@@ -288,17 +311,8 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			count = *r.Count
 		}
 
-		if interval <= 0 {
-			return nil, fmt.Errorf("probe %q: probe_every must be positive", r.Name)
-		}
-		if packetInterval <= 0 {
-			return nil, fmt.Errorf("probe %q: packet_interval must be positive", r.Name)
-		}
-		if timeout <= 0 {
-			return nil, fmt.Errorf("probe %q: timeout must be positive", r.Name)
-		}
-		if count <= 0 {
-			return nil, fmt.Errorf("probe %q: count must be positive", r.Name)
+		if err := validateTimings(interval, packetInterval, timeout, count); err != nil {
+			return nil, fmt.Errorf("probe %q: %w", r.Name, err)
 		}
 
 		labels := r.Labels
