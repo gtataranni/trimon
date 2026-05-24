@@ -39,6 +39,13 @@ Metric spec: **[docs/metrics.md — OTLP exporter metrics](docs/metrics.md)**
 
 ---
 
+## Phase 2.5 - v0.2.5: strengthen structure and add demo
+
+- [ ] Finish up (most of) items in [TASKS.md](TASKS.md)
+- [ ] Add advanced dashboard example and screenshot
+
+---
+
 ## Phase 3 — v0.3.0: Target areas/groups
 
 Goal: introduce target area as a way to group multiple targets.
