@@ -41,7 +41,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-03 · CRITICAL — Prevent TOCTOU race on config reload
-**Status:** OPEN  
+**Status:** MERGED  
 **Files:** `internal/config/config.go` (`Load` function)  
 **Context:** `Load()` calls `os.ReadFile()` to get the YAML, then parses and validates. Between read and validation, an attacker who can write to the config file could swap in a different file. The result is that validation and actual execution operate on different data.  
 **Action:**

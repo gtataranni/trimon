@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -107,6 +109,8 @@ type Config struct {
 	Exporters ExportersConfig
 	Server    ServerConfig
 	Probes    []types.ProbeConfig
+	// SHA256 is the hex-encoded SHA-256 of the raw config file bytes that produced this Config.
+	SHA256 string
 }
 
 var knownProbeTypes = map[string]bool{
@@ -143,6 +147,13 @@ func isLocalIP(ip string) (bool, error) {
 }
 
 // Load reads and validates the config file at path.
+//
+// Single-read semantics: the file is read exactly once into a byte buffer here,
+// then that buffer is passed to parse() and threaded through every validator
+// without any subsequent disk access. This prevents a TOCTOU race where an
+// attacker who can write to the config file swaps in different content between
+// the read and the validation/use phases. Do not introduce a second read of
+// `path` (or any other config file) anywhere in this call chain.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -188,11 +199,14 @@ func parse(data []byte) (*Config, error) {
 		return nil, err
 	}
 
+	sum := sha256.Sum256(data)
+
 	return &Config{
 		Global:    raw.Global,
 		Exporters: raw.Exporters,
 		Server:    raw.Server,
 		Probes:    probes,
+		SHA256:    hex.EncodeToString(sum[:]),
 	}, nil
 }
 

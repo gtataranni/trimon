@@ -49,6 +49,7 @@ func main() {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	logger.Info("config loaded", "path", *configPath, "sha256", cfg.SHA256)
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {
 		switch probeCfg.Type {
@@ -85,7 +86,7 @@ func main() {
 		sched.Reload(newCfg.Probes)
 		srv.UpdateConfig(newCfg)
 		exp.RecordConfigReload(context.Background())
-		logger.Info("config reloaded", "probes", len(newCfg.Probes))
+		logger.Info("config reloaded", "probes", len(newCfg.Probes), "sha256", newCfg.SHA256)
 		return newCfg, nil
 	})
 
