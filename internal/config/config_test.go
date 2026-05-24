@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"testing"
 	"time"
 )
@@ -218,6 +219,62 @@ probes: []
 	}
 	if o.Retry.MaxElapsedTime != 300*time.Second {
 		t.Errorf("default max_elapsed_time: want 300s, got %v", o.Retry.MaxElapsedTime)
+	}
+}
+
+func TestNonLocalSourceIPRejected(t *testing.T) {
+	// Stub localInterfaceAddrs to return only loopback so we can use a
+	// deterministic "not-local" IP address without depending on real interfaces.
+	orig := localInterfaceAddrs
+	localInterfaceAddrs = func() ([]net.Addr, error) {
+		_, ipnet, _ := net.ParseCIDR("127.0.0.1/8")
+		// Preserve host bits as InterfaceAddrs does.
+		ipnet.IP = net.ParseIP("127.0.0.1").To4()
+		return []net.Addr{ipnet}, nil
+	}
+	defer func() { localInterfaceAddrs = orig }()
+
+	yaml := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+  - name: nonlocal
+    type: icmp
+    target: "127.0.0.1"
+    source_ip: "10.0.0.1"
+`
+	_, err := parse([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected error for non-local source_ip, got nil")
+	}
+}
+
+func TestLocalSourceIPAccepted(t *testing.T) {
+	// Stub localInterfaceAddrs to return a known set of addresses.
+	orig := localInterfaceAddrs
+	localInterfaceAddrs = func() ([]net.Addr, error) {
+		_, loopback, _ := net.ParseCIDR("127.0.0.1/8")
+		loopback.IP = net.ParseIP("127.0.0.1").To4()
+		return []net.Addr{loopback}, nil
+	}
+	defer func() { localInterfaceAddrs = orig }()
+
+	yaml := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+  - name: local
+    type: icmp
+    target: "127.0.0.1"
+    source_ip: "127.0.0.1"
+`
+	_, err := parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("expected no error for local source_ip, got: %v", err)
 	}
 }
 

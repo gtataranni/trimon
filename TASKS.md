@@ -30,7 +30,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-02 · CRITICAL — Validate source IP is local before accepting config
-**Status:** OPEN  
+**Status:** MERGED
 **Files:** `internal/config/config.go` (lines ~218–225)  
 **Context:** `resolveTarget()` validates that probe targets resolve via DNS but there is no equivalent check that a configured `source_ip` is actually assigned to a local interface. An attacker who writes to the config can set any IP as source, causing ICMP probes to spoof source addresses the host does not own.  
 **Action:**

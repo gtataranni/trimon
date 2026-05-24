@@ -113,6 +113,35 @@ var knownProbeTypes = map[string]bool{
 	"icmp": true,
 }
 
+// localInterfaceAddrs returns the list of unicast addresses assigned to local interfaces.
+// It is a package-level variable so tests can replace it with a stub.
+var localInterfaceAddrs = func() ([]net.Addr, error) {
+	return net.InterfaceAddrs()
+}
+
+// isLocalIP reports whether ip is assigned to a local interface.
+func isLocalIP(ip string) (bool, error) {
+	addrs, err := localInterfaceAddrs()
+	if err != nil {
+		return false, fmt.Errorf("listing local interfaces: %w", err)
+	}
+	for _, addr := range addrs {
+		var ipNet *net.IPNet
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ipNet = v
+		case *net.IPAddr:
+			ipNet = &net.IPNet{IP: v.IP, Mask: net.CIDRMask(32, 32)}
+		default:
+			continue
+		}
+		if ipNet.IP.Equal(net.ParseIP(ip)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Load reads and validates the config file at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -217,6 +246,15 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		}
 		if sourceIP != "" && net.ParseIP(sourceIP) == nil {
 			return nil, fmt.Errorf("probe %q: source_ip %q is not a valid IP address", r.Name, sourceIP)
+		}
+		if sourceIP != "" {
+			local, err := isLocalIP(sourceIP)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+			if !local {
+				return nil, fmt.Errorf("probe %q: source_ip %q is not assigned to any local interface", r.Name, sourceIP)
+			}
 		}
 
 		interval := global.Interval
