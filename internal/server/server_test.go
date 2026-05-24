@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -98,6 +99,37 @@ func TestReloadSuccess(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if reloaded, _ := body["reloaded"].(bool); !reloaded {
 		t.Errorf("body.reloaded: want true, got %v", body["reloaded"])
+	}
+}
+
+func TestReloadErrorIsSanitized(t *testing.T) {
+	srv := newTestServer()
+	const sensitive = "open /etc/trimon/secret.yaml: permission denied"
+	srv.SetReloadFunc(func() (*config.Config, error) {
+		return nil, errors.New(sensitive)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/reload", bytes.NewReader(nil))
+	rr := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status: want 400, got %d", rr.Code)
+	}
+	if strings.Contains(rr.Body.String(), sensitive) {
+		t.Errorf("response body leaks internal error: %s", rr.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+	if reloaded, _ := body["reloaded"].(bool); reloaded {
+		t.Errorf("body.reloaded: want false, got %v", body["reloaded"])
+	}
+	msg, _ := body["error"].(string)
+	if msg == "" || strings.Contains(msg, "/etc/") {
+		t.Errorf("body.error should be a generic message, got %q", msg)
 	}
 }
 

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -16,6 +18,7 @@ import (
 type Server struct {
 	httpServer     *http.Server
 	metricsHandler http.Handler
+	logger         *slog.Logger
 
 	reloadMu   sync.Mutex
 	reloadFunc func() (*config.Config, error)
@@ -25,7 +28,7 @@ type Server struct {
 // New wires up routes and returns a ready-to-serve Server.
 // Call SetMetricsHandler, SetReloadFunc, and UpdateConfig before Start.
 func New(listenAddr string) *Server {
-	s := &Server{}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -46,6 +49,14 @@ func (s *Server) SetReloadFunc(fn func() (*config.Config, error)) { s.reloadFunc
 
 // UpdateConfig replaces the config served by GET /config.
 func (s *Server) UpdateConfig(cfg *config.Config) { s.currentCfg.Store(cfg) }
+
+// SetLogger registers the structured logger used for handler-side errors.
+// If never called, the server logs are silently discarded.
+func (s *Server) SetLogger(l *slog.Logger) {
+	if l != nil {
+		s.logger = l
+	}
+}
 
 // Start begins listening in the background.
 func (s *Server) Start() error {
@@ -84,9 +95,13 @@ func (s *Server) handleReload(w http.ResponseWriter, _ *http.Request) {
 
 	newCfg, err := s.reloadFunc()
 	if err != nil {
+		// Real error stays in the server log; the client gets a generic
+		// message so we don't leak filesystem paths, DNS resolver output,
+		// or possibly sensitive error messages.
+		s.logger.Error("config reload failed", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"reloaded": false,
-			"error":    err.Error(),
+			"error":    "configuration invalid; see server logs",
 		})
 		return
 	}
@@ -109,7 +124,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Accept") == "application/x-yaml" {
 		b, err := yaml.Marshal(dump)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// Don't echo the marshal error — it could leak struct internals.
+			s.logger.Error("config yaml marshal failed", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-yaml")

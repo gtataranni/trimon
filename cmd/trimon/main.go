@@ -69,6 +69,7 @@ func main() {
 	}
 
 	srv := server.New(cfg.Server.Listen)
+	srv.SetLogger(logger)
 	srv.SetMetricsHandler(exp.PrometheusHandler())
 	srv.UpdateConfig(cfg)
 

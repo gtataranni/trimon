@@ -52,7 +52,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-04 · HIGH — Sanitize HTTP error responses (no internal detail leakage)
-**Status:** OPEN  
+**Status:** MERGED  
 **Files:** `internal/server/server.go` (lines ~87–90, ~112–115)  
 **Context:** The `/reload` handler returns `err.Error()` directly to the HTTP client. Error strings from `config.Load()` include system paths, socket error strings (e.g. `"open raw socket (CAP_NET_RAW required)"`) and DNS resolver details — all useful to an attacker mapping your infrastructure.  
 **Action:**
