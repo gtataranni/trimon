@@ -10,7 +10,7 @@ exporters:
     format: json
 
 server:
-  listen: ":8080"
+  listen: ":8080"   # bind all interfaces — required inside containers
 
 probes:
   - name: ping-google-dns

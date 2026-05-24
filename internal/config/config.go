@@ -170,7 +170,7 @@ func parse(data []byte) (*Config, error) {
 	raw.Global.PacketInterval = 1 * time.Second
 	raw.Global.Timeout = 5 * time.Second
 	raw.Global.Count = 3
-	raw.Server.Listen = ":8080"
+	raw.Server.Listen = "127.0.0.1:8080"
 	raw.Exporters.Stdout.Format = "json"
 	raw.Exporters.OTLP.Protocol = "grpc"
 	raw.Exporters.OTLP.Batch.ExportInterval = 30 * time.Second

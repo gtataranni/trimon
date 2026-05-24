@@ -187,8 +187,8 @@ probes: []
 	if cfg.Exporters.Stdout.Format != "json" {
 		t.Errorf("default format: want json, got %q", cfg.Exporters.Stdout.Format)
 	}
-	if cfg.Server.Listen != ":8080" {
-		t.Errorf("default listen: want :8080, got %q", cfg.Server.Listen)
+	if cfg.Server.Listen != "127.0.0.1:8080" {
+		t.Errorf("default listen: want 127.0.0.1:8080, got %q", cfg.Server.Listen)
 	}
 }
 

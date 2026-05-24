@@ -63,7 +63,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-05 · HIGH — Default listen address to loopback, not all interfaces
-**Status:** OPEN  
+**Status:** MERGED  
 **Files:** `internal/config/config.go` (default for `ServerConfig.Listen`)  
 **Context:** Default listen is `:8080` which binds `0.0.0.0:8080` — exposed to any network the container is attached to. In Kubernetes this means any pod in the cluster can reach trimon's API.  
 **Action:**
