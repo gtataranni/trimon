@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -58,9 +60,14 @@ func (s *Server) SetLogger(l *slog.Logger) {
 	}
 }
 
-// Start begins listening in the background.
+// Start binds the listening socket synchronously, then serves in the background.
+// Returning an error means the bind failed (e.g. port in use); the caller should treat this as fatal.
 func (s *Server) Start() error {
-	go func() { _ = s.httpServer.ListenAndServe() }()
+	ln, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("http server bind %s: %w", s.httpServer.Addr, err)
+	}
+	go func() { _ = s.httpServer.Serve(ln) }()
 	return nil
 }
 

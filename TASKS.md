@@ -116,7 +116,7 @@ Only begin coding once the design is confirmed. The plan document should be left
 ---
 
 ### SEC-09 · HIGH — Fail fast if HTTP server cannot bind
-**Status:** OPEN  
+**Status:** DONE  
 **Depends on:** none  
 **Files:** `cmd/trimon/main.go` (line ~92)  
 **Context:** `srv.Start()` is called with `_ = srv.Start()`, discarding the error. If the port is in use, the daemon starts without an HTTP server — no `/metrics`, no `/healthz`, no `/reload` — but appears to be running normally. The operator has no indication something is wrong.  
