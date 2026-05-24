@@ -74,7 +74,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ---
 
 ### SEC-06 · HIGH — Add rate limiting to HTTP endpoints
-**Status:** IN PROGRESS  
+**Status:** SKIP  
 **Files:** `internal/server/server.go`  
 **Context:** Zero rate limiting means an attacker can flood `/reload` causing CPU spikes and log churn, or flood `/metrics` triggering the Prometheus encoder repeatedly. No external library needed — a simple token bucket using `time.Ticker` or `golang.org/x/time/rate` (stdlib-adjacent) is fine.  
 **Action:**
