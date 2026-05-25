@@ -124,6 +124,58 @@ func TestTimeoutAfterAllPacketsSent(t *testing.T) {
 	}
 }
 
+// TestFieldsPopulatedOnSuccess verifies all ProbeResult fields are set on a successful
+// loopback probe (127.0.0.1 always responds when raw sockets are available).
+func TestFieldsPopulatedOnSuccess(t *testing.T) {
+	requireSocket(t)
+	p := New(types.ProbeConfig{
+		Name:           "test",
+		Type:           "icmp",
+		Target:         "127.0.0.1",
+		Count:          3,
+		PacketInterval: 50 * time.Millisecond,
+		Timeout:        2 * time.Second,
+		Interval:       30 * time.Second,
+	})
+	result, err := p.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != types.StatusSuccess {
+		t.Errorf("Status: got %s, want StatusSuccess (error: %s)", result.Status, result.ErrorMsg)
+	}
+	if result.ProbeName != "test" {
+		t.Errorf("ProbeName: got %q, want %q", result.ProbeName, "test")
+	}
+	if result.Target != "127.0.0.1" {
+		t.Errorf("Target: got %q, want %q", result.Target, "127.0.0.1")
+	}
+	if result.ProbeType != "icmp" {
+		t.Errorf("ProbeType: got %q, want icmp", result.ProbeType)
+	}
+	if result.PacketsSent != 3 {
+		t.Errorf("PacketsSent: got %d, want 3", result.PacketsSent)
+	}
+	if result.PacketsReceived != 3 {
+		t.Errorf("PacketsReceived: got %d, want 3", result.PacketsReceived)
+	}
+	if result.PacketLossRatio != 0 {
+		t.Errorf("PacketLossRatio: got %f, want 0", result.PacketLossRatio)
+	}
+	if result.RTTMinMS <= 0 {
+		t.Errorf("RTTMinMS: got %f, want > 0", result.RTTMinMS)
+	}
+	if result.RTTMeanMS <= 0 {
+		t.Errorf("RTTMeanMS: got %f, want > 0", result.RTTMeanMS)
+	}
+	if result.RTTMaxMS <= 0 {
+		t.Errorf("RTTMaxMS: got %f, want > 0", result.RTTMaxMS)
+	}
+	if result.Timestamp.IsZero() {
+		t.Error("Timestamp must be non-zero")
+	}
+}
+
 // TestContextCancelledBeforeProbeTimeout validates behaviour when the caller
 // cancels the context before pinger.Timeout would fire.
 //

@@ -39,6 +39,7 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 	pinger, err := probing.NewPinger(p.cfg.Target)
 	if err != nil {
 		result.Status = types.StatusError
+		result.ErrorType = "init_error"
 		result.ErrorMsg = fmt.Sprintf("resolve target %q: %v", p.cfg.Target, err)
 		return result, nil //nolint:nilerr
 	}
@@ -51,20 +52,30 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 
 	if runErr := pinger.RunWithContext(ctx); runErr != nil && ctx.Err() == nil {
 		result.Status = types.StatusError
-		result.ErrorMsg = fmt.Sprintf("open raw socket (CAP_NET_RAW required): %v", runErr)
+		result.ErrorType = "run_error"
+		result.ErrorMsg = fmt.Sprintf("pinger run: %v", runErr)
 		return result, nil //nolint:nilerr
 	}
 
 	stats := pinger.Statistics()
-	result.PacketsSent = stats.PacketsSent
-	result.PacketsReceived = stats.PacketsRecv
-
 	if stats.PacketsSent == 0 {
 		result.Status = types.StatusError
 		result.ErrorMsg = "no packets sent"
+		if ctx.Err() == context.DeadlineExceeded {
+			result.ErrorType = "timeout"
+		}
 		return result, nil
 	}
 
+	applyStats(&result, stats)
+	return result, nil
+}
+
+// applyStats populates result from pinger statistics.
+// Caller must ensure stats.PacketsSent > 0.
+func applyStats(result *types.ProbeResult, stats *probing.Statistics) {
+	result.PacketsSent = stats.PacketsSent
+	result.PacketsReceived = stats.PacketsRecv
 	// PacketLoss from pro-bing is a percentage (0–100); convert to ratio (0.0–1.0).
 	result.PacketLossRatio = stats.PacketLoss / 100
 
@@ -83,6 +94,4 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 		result.RTTMaxMS = stats.MaxRtt.Seconds() * 1000
 		result.RTTStddevMS = stats.StdDevRtt.Seconds() * 1000
 	}
-
-	return result, nil
 }

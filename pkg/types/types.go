@@ -41,5 +41,6 @@ type ProbeResult struct {
 	PacketLossRatio   float64           `json:"packet_loss"`
 	Status            Status            `json:"status"`
 	ErrorMsg          string            `json:"error_msg,omitempty"`
+	ErrorType         string            `json:"error_type,omitempty"`
 	Labels            map[string]string `json:"labels"`
 }

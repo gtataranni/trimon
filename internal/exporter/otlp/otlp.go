@@ -256,9 +256,13 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		packetLoss = 1.0
 	case types.StatusError:
 		packetLoss = math.NaN()
+		errType := r.ErrorType
+		if errType == "" {
+			errType = "unknown"
+		}
 		e.probeErrors.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("probe.name", r.ProbeName),
-			attribute.String("error.type", "probe_error"),
+			attribute.String("error.type", errType),
 		))
 	}
 

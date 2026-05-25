@@ -108,7 +108,7 @@ Only begin coding once the design is confirmed.
 ## OPTIMIZATION
 
 ### OPT-01 · HIGH — Add unit tests for ICMP prober
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** OPT-06 (if OPT-06 is done first, include `ErrorType` coverage in the tests here; otherwise revisit after OPT-06)  
 **Files:** `internal/probe/icmp/icmp_test.go` (create new file)  
 **Context:** `icmp.go` has zero tests. The status determination, RTT conversion, and packet loss calculation are entirely untested. This is the most critical untested path in the codebase — bugs here corrupt all exported metrics.  
@@ -165,7 +165,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-06 · MEDIUM — Add error type categorization to ProbeResult
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `pkg/types/types.go`, `internal/probe/icmp/icmp.go`, `internal/exporter/otlp/otlp.go`  
 **Context:** When `Status=StatusError`, the `error.type="probe_error"` attribute is hardcoded in the OTLP exporter. Operators cannot distinguish DNS failures from socket errors from timeout errors in their dashboards.  
 **Action:**

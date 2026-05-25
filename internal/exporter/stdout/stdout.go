@@ -25,6 +25,7 @@ type jsonRecord struct {
 	RTTStddevMS  float64           `json:"rtt_stddev_ms"`
 	PacketLoss   float64           `json:"packet_loss"`
 	ErrorMsg     string            `json:"error_msg,omitempty"`
+	ErrorType    string            `json:"error_type,omitempty"`
 	Labels       map[string]string `json:"labels"`
 }
 
@@ -69,6 +70,7 @@ func (e *Exporter) writeJSON(r types.ProbeResult) error {
 		RTTStddevMS: r.RTTStddevMS,
 		PacketLoss:  r.PacketLossRatio,
 		ErrorMsg:    r.ErrorMsg,
+		ErrorType:   r.ErrorType,
 		Labels:      r.Labels,
 	}
 	if rec.Labels == nil {
