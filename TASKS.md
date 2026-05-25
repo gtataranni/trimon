@@ -75,7 +75,7 @@ Only begin coding once the design is confirmed.
 ## OPTIMIZATION
 
 ### OPT-07 · MEDIUM — Add integration smoke test for cmd/trimon/main.go
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** OPT-01, OPT-06 (integration test is most valuable once the ICMP unit tests and ErrorType field are in place; gaps in unit coverage make it harder to isolate failures found here)  
 **Files:** `cmd/trimon/main_test.go` (create new file)  
 **Context:** No test covers the main wiring: config → scheduler → pipeline → exporter. If wiring is broken, only a live run reveals it. A test with a minimal in-memory config would catch most integration bugs.  
