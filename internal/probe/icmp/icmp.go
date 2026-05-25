@@ -41,6 +41,7 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 		result.Status = types.StatusError
 		result.ErrorType = "init_error"
 		result.ErrorMsg = fmt.Sprintf("resolve target %q: %v", p.cfg.Target, err)
+		// Error is embedded in result.Status/ErrorMsg so the pipeline processes all probes uniformly.
 		return result, nil //nolint:nilerr
 	}
 
@@ -54,6 +55,7 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 		result.Status = types.StatusError
 		result.ErrorType = "run_error"
 		result.ErrorMsg = fmt.Sprintf("pinger run: %v", runErr)
+		// Error is embedded in result.Status/ErrorMsg so the pipeline processes all probes uniformly.
 		return result, nil //nolint:nilerr
 	}
 
@@ -88,6 +90,7 @@ func applyStats(result *types.ProbeResult, stats *probing.Statistics) {
 		result.Status = types.StatusPartial
 	}
 
+	// RTT fields are only populated when at least one reply was received; they remain zero otherwise.
 	if stats.PacketsRecv > 0 {
 		result.RTTMinMS = stats.MinRtt.Seconds() * 1000
 		result.RTTMeanMS = stats.AvgRtt.Seconds() * 1000

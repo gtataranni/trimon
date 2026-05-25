@@ -97,7 +97,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-09 · LOW — Document discarded error in srv.Shutdown()
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `cmd/trimon/main.go` (~line 118)  
 **Context:** `_ = srv.Shutdown(shutCtx)` silently discards a shutdown error. While this is intentional (we're exiting anyway), it reads as a missed error.  
 **Action:**
@@ -112,7 +112,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-10 · LOW — Document RTT field validity conditions
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `pkg/types/types.go` (ProbeResult struct), `internal/probe/icmp/icmp.go`  
 **Context:** `RTTMinMS`, `RTTMeanMS`, `RTTMaxMS`, and `RTTStddevMS` are zero when `PacketsReceived == 0`. Consumers (exporters, tests) must know this. Without documentation, a future exporter could naively read RTT fields for a failed probe and report zeros as legitimate measurements.  
 **Action:**
@@ -122,7 +122,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-11 · LOW — Explain nolint:nilerr in icmp.go
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/probe/icmp/icmp.go` (lines with `//nolint:nilerr`)  
 **Context:** The prober returns `(result, nil)` even when it encountered an error — the error is embedded in `result.Status` and `result.ErrorMsg`. The nolint suppresses the linter complaint but future readers might remove it or be confused by the pattern.  
 **Action:**
