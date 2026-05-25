@@ -48,9 +48,10 @@ type Exporter struct {
 	probeUp                            metric.Int64Gauge
 
 	// self-observability instruments
-	probeRuns     metric.Int64Counter
-	probeErrors   metric.Int64Counter
-	configReloads metric.Int64Counter
+	probeRuns      metric.Int64Counter
+	probeErrors    metric.Int64Counter
+	exporterErrors metric.Int64Counter
+	configReloads  metric.Int64Counter
 
 	// set once before first scrape via SetGoroutinesGetter
 	getGoroutines func() int
@@ -115,6 +116,9 @@ func New(ctx context.Context, cfg config.OTLPExporterConfig, version, commit str
 	return e, nil
 }
 
+// Name returns the exporter identifier used in self-observability metrics.
+func (e *Exporter) Name() string { return "otlp" }
+
 // PrometheusHandler returns the http.Handler that serves /metrics.
 func (e *Exporter) PrometheusHandler() http.Handler { return e.promHandler }
 
@@ -126,6 +130,12 @@ func (e *Exporter) SetGoroutinesGetter(f func() int) { e.getGoroutines = f }
 // RecordConfigReload increments the config-reload counter.
 func (e *Exporter) RecordConfigReload(ctx context.Context) {
 	e.configReloads.Add(ctx, 1)
+}
+
+// RecordExporterError increments the exporter-error counter for the named exporter.
+// Intended to be passed as a callback to pipeline.SetExportErrorRecorder.
+func (e *Exporter) RecordExporterError(ctx context.Context, exporterName string) {
+	e.exporterErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("exporter.name", exporterName)))
 }
 
 func (e *Exporter) registerInstruments(meter metric.Meter, version, commit string) error {
@@ -177,6 +187,10 @@ func (e *Exporter) registerInstruments(meter metric.Meter, version, commit strin
 		return err
 	}
 	e.probeErrors, err = meter.Int64Counter("trimon.probe.errors", metric.WithUnit("{errors}"))
+	if err != nil {
+		return err
+	}
+	e.exporterErrors, err = meter.Int64Counter("trimon.exporter.errors", metric.WithUnit("{errors}"))
 	if err != nil {
 		return err
 	}

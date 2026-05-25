@@ -75,6 +75,7 @@ func main() {
 
 	exporters := buildExporters(cfg, exp, logger)
 	pipe := pipeline.New(exporters, logger)
+	pipe.SetExportErrorRecorder(exp.RecordExporterError)
 
 	sched := scheduler.New(probeFactory, pipe.Results(), logger)
 	exp.SetGoroutinesGetter(sched.WorkerCount)

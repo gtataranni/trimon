@@ -19,6 +19,7 @@ type countExporter struct {
 	lastID atomic.Value // stores string (ProbeName)
 }
 
+func (e *countExporter) Name() string { return "count" }
 func (e *countExporter) Export(_ context.Context, r types.ProbeResult) error {
 	e.calls.Add(1)
 	e.lastID.Store(r.ProbeName)

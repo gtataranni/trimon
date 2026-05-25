@@ -47,6 +47,9 @@ func newWithWriter(w io.Writer, format string) *Exporter {
 	return &Exporter{w: w, format: format, enc: enc}
 }
 
+// Name returns the exporter identifier used in self-observability metrics.
+func (e *Exporter) Name() string { return "stdout" }
+
 func (e *Exporter) Export(_ context.Context, r types.ProbeResult) error {
 	if e.format == "json" {
 		return e.writeJSON(r)

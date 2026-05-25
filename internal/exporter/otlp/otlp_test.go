@@ -120,6 +120,30 @@ func findInt64Counter(t *testing.T, ms []metricdata.Metrics, name string) int64 
 	return 0
 }
 
+// findInt64CounterByAttr locates a named counter metric and returns the value of
+// the datapoint whose attrKey matches attrVal. Fatals if absent.
+func findInt64CounterByAttr(t *testing.T, ms []metricdata.Metrics, name, attrKey, attrVal string) int64 {
+	t.Helper()
+	for _, m := range ms {
+		if m.Name != name {
+			continue
+		}
+		s, ok := m.Data.(metricdata.Sum[int64])
+		if !ok {
+			t.Fatalf("metric %q: expected Sum[int64], got %T", name, m.Data)
+		}
+		for _, dp := range s.DataPoints {
+			v, ok := dp.Attributes.Value(attribute.Key(attrKey))
+			if ok && v.AsString() == attrVal {
+				return dp.Value
+			}
+		}
+		t.Fatalf("metric %q: no datapoint with %s=%q", name, attrKey, attrVal)
+	}
+	t.Fatalf("metric %q not found in collected metrics", name)
+	return 0
+}
+
 // attrString retrieves a string attribute value from a Set, fataling when absent.
 func attrString(t *testing.T, attrs attribute.Set, key string) string {
 	t.Helper()
@@ -556,6 +580,7 @@ func TestUserLabels(t *testing.T) {
 // in the collected output after a single successful Export call.
 func TestAllMetricsPresent(t *testing.T) {
 	e, reader := newTestExporter(t)
+	ctx := context.Background()
 
 	result := types.ProbeResult{
 		ProbeName:       "smoke",
@@ -572,9 +597,10 @@ func TestAllMetricsPresent(t *testing.T) {
 		PacketLossRatio: 0.0,
 	}
 
-	if err := e.Export(context.Background(), result); err != nil {
+	if err := e.Export(ctx, result); err != nil {
 		t.Fatalf("Export: %v", err)
 	}
+	e.RecordExporterError(ctx, "otlp")
 
 	ms := collectMetrics(t, reader)
 	names := make(map[string]bool, len(ms))
@@ -595,6 +621,7 @@ func TestAllMetricsPresent(t *testing.T) {
 		"trimon.probe.runs",
 		"trimon.build.info",
 		"trimon.scheduler.goroutines",
+		"trimon.exporter.errors",
 	}
 	for _, name := range expected {
 		if !names[name] {
@@ -697,6 +724,52 @@ func TestBridgeProbeUp(t *testing.T) {
 	// Verify packet counters appear
 	if !strings.Contains(body, "trimon_probe_packets_sent") {
 		t.Errorf("trimon_probe_packets_sent not found in /metrics output\n%s", body)
+	}
+}
+
+// TestExporterName verifies that the OTLP exporter returns the expected name.
+func TestExporterName(t *testing.T) {
+	e, _ := newTestExporter(t)
+	if got := e.Name(); got != "otlp" {
+		t.Errorf("Name: got %q, want %q", got, "otlp")
+	}
+}
+
+// TestExporterErrorsCounter verifies that RecordExporterError increments
+// trimon.exporter.errors with the correct exporter.name attribute.
+func TestExporterErrorsCounter(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	e.RecordExporterError(ctx, "otlp")
+	e.RecordExporterError(ctx, "otlp")
+	e.RecordExporterError(ctx, "stdout")
+
+	ms := collectMetrics(t, reader)
+
+	otlpCount := findInt64CounterByAttr(t, ms, "trimon.exporter.errors", "exporter.name", "otlp")
+	if otlpCount != 2 {
+		t.Errorf("exporter.errors[otlp]: got %d, want 2", otlpCount)
+	}
+
+	stdoutCount := findInt64CounterByAttr(t, ms, "trimon.exporter.errors", "exporter.name", "stdout")
+	if stdoutCount != 1 {
+		t.Errorf("exporter.errors[stdout]: got %d, want 1", stdoutCount)
+	}
+}
+
+// TestBridgeExporterErrors verifies that trimon_exporter_errors_total appears
+// in the Prometheus output after RecordExporterError is called.
+func TestBridgeExporterErrors(t *testing.T) {
+	exp := newBridgeExporter(t)
+	exp.RecordExporterError(context.Background(), "otlp")
+
+	body := metricsBody(t, exp)
+	if !strings.Contains(body, `trimon_exporter_errors_total`) {
+		t.Errorf("trimon_exporter_errors_total not found in /metrics output\n%s", body)
+	}
+	if !strings.Contains(body, `exporter_name="otlp"`) {
+		t.Errorf(`exporter_name="otlp" not found in /metrics output\n%s`, body)
 	}
 }
 

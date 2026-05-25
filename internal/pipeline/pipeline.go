@@ -12,10 +12,11 @@ const bufferSize = 1000
 
 // Pipeline fans results from a shared channel out to all registered exporters.
 type Pipeline struct {
-	results   chan types.ProbeResult
-	exporters []exporter.Exporter
-	logger    *slog.Logger
-	done      chan struct{}
+	results         chan types.ProbeResult
+	exporters       []exporter.Exporter
+	logger          *slog.Logger
+	done            chan struct{}
+	onExportError   func(ctx context.Context, exporterName string)
 }
 
 // New creates a Pipeline with a buffered results channel of size 1000.
@@ -64,10 +65,20 @@ func (p *Pipeline) Wait() {
 	<-p.done
 }
 
+// SetExportErrorRecorder registers a callback invoked whenever an exporter
+// returns an error. exporterName is the value returned by the failing exporter's
+// Name() method. Intended for recording trimon.exporter.errors via the OTLP exporter.
+func (p *Pipeline) SetExportErrorRecorder(fn func(ctx context.Context, exporterName string)) {
+	p.onExportError = fn
+}
+
 func (p *Pipeline) dispatch(ctx context.Context, result types.ProbeResult) {
 	for _, exp := range p.exporters {
 		if err := exp.Export(ctx, result); err != nil {
-			p.logger.Error("exporter error", "error", err)
+			p.logger.Error("exporter error", "exporter", exp.Name(), "error", err)
+			if p.onExportError != nil {
+				p.onExportError(ctx, exp.Name())
+			}
 		}
 	}
 }

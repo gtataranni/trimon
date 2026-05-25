@@ -71,7 +71,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### SEC-13 · MEDIUM — Track exporter failures as a metric
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/pipeline/pipeline.go`, `internal/exporter/otlp/otlp.go`  
 **Context:** When an exporter returns an error, the pipeline logs it and moves on. There is no counter, so an operator cannot alert on repeated exporter failures via Prometheus. If OTLP export silently fails for hours, metrics appear frozen rather than raising an alarm.  
 **Action:**
