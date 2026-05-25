@@ -61,7 +61,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### SEC-12 · MEDIUM — Document context.Background() usage in pipeline drain
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/pipeline/pipeline.go` (line ~51)  
 **Context:** During shutdown drain, the pipeline calls `p.dispatch(context.Background(), result)` instead of the now-cancelled `ctx`. This is intentional — using the cancelled context would cause exporters to skip the final results. But it reads like a bug without explanation.  
 **Action:**

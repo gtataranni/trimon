@@ -49,6 +49,7 @@ func (p *Pipeline) Run(ctx context.Context) {
 			for {
 				select {
 				case result := <-p.results:
+					// Use Background so exporters can flush results even though the parent context is cancelled.
 					p.dispatch(context.Background(), result)
 				default:
 					return
