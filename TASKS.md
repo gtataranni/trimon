@@ -87,7 +87,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-08 · LOW — Inline buildExporters() into main()
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `cmd/trimon/main.go` (`buildExporters` function)  
 **Context:** `buildExporters()` is a 6-line function called exactly once. It adds a layer of indirection for no reuse benefit and slightly obscures the startup sequence when reading `main()`.  
 **Action:**

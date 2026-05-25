@@ -73,7 +73,10 @@ func main() {
 	srv.SetMetricsHandler(exp.PrometheusHandler())
 	srv.UpdateConfig(cfg)
 
-	exporters := buildExporters(cfg, exp, logger)
+	exporters := []exporter.Exporter{exp}
+	if cfg.Exporters.Stdout.Enabled {
+		exporters = append(exporters, stdoutexp.New(cfg.Exporters.Stdout.Format))
+	}
 	pipe := pipeline.New(exporters, logger)
 	pipe.SetExportErrorRecorder(exp.RecordExporterError)
 
@@ -119,14 +122,6 @@ func main() {
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutCancel()
 	_ = srv.Shutdown(shutCtx)
-}
-
-func buildExporters(cfg *config.Config, exp *otlpexp.Exporter, logger *slog.Logger) []exporter.Exporter {
-	list := []exporter.Exporter{exp}
-	if cfg.Exporters.Stdout.Enabled {
-		list = append(list, stdoutexp.New(cfg.Exporters.Stdout.Format))
-	}
-	return list
 }
 
 func buildLogger(level, format string) *slog.Logger {
