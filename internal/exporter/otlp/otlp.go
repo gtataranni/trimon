@@ -35,9 +35,10 @@ const instrScope = "github.com/gtataranni/trimon"
 //   - a Prometheus /metrics endpoint via the OTel Prometheus bridge (always active)
 //   - an OTLP collector via gRPC or HTTP (when cfg.Enabled is true)
 type Exporter struct {
-	provider    *sdkmetric.MeterProvider
-	promHandler http.Handler
-	logger      *slog.Logger
+	provider        *sdkmetric.MeterProvider
+	promHandler     http.Handler
+	logger          *slog.Logger
+	shutdownTimeout time.Duration
 
 	// probe result instruments — recorded on every Export call
 	rttMin, rttMean, rttMax, rttStddev metric.Float64Gauge
@@ -61,7 +62,7 @@ type Exporter struct {
 // The Prometheus bridge reader is always registered; the OTLP reader is added
 // only when cfg.Enabled is true.
 func New(ctx context.Context, cfg config.OTLPExporterConfig, version, commit string, logger *slog.Logger) (*Exporter, error) {
-	e := &Exporter{logger: logger}
+	e := &Exporter{logger: logger, shutdownTimeout: cfg.ShutdownTimeout}
 
 	hostname, _ := os.Hostname()
 	res, err := resource.New(ctx,
@@ -292,8 +293,9 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 }
 
 // Close flushes in-flight data and shuts down the MeterProvider.
+// ForceFlush and Shutdown share the configured shutdown_timeout budget.
 func (e *Exporter) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), e.shutdownTimeout)
 	defer cancel()
 	if err := e.provider.ForceFlush(ctx); err != nil {
 		e.logger.Warn("otlp: force flush error", "err", err)

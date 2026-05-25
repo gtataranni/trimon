@@ -54,13 +54,14 @@ type OTLPRetryConfig struct {
 
 // OTLPExporterConfig holds OTLP exporter settings.
 type OTLPExporterConfig struct {
-	Enabled  bool            `yaml:"enabled"`
-	Endpoint string          `yaml:"endpoint"`
-	Protocol string          `yaml:"protocol"` // grpc | http
-	Insecure bool            `yaml:"insecure"`
-	TLS      OTLPTLSConfig   `yaml:"tls"`
-	Batch    OTLPBatchConfig `yaml:"batch"`
-	Retry    OTLPRetryConfig `yaml:"retry"`
+	Enabled         bool            `yaml:"enabled"`
+	Endpoint        string          `yaml:"endpoint"`
+	Protocol        string          `yaml:"protocol"` // grpc | http
+	Insecure        bool            `yaml:"insecure"`
+	TLS             OTLPTLSConfig   `yaml:"tls"`
+	Batch           OTLPBatchConfig `yaml:"batch"`
+	Retry           OTLPRetryConfig `yaml:"retry"`
+	ShutdownTimeout time.Duration   `yaml:"shutdown_timeout"` // default 10s
 }
 
 // ExportersConfig groups all exporter configurations.
@@ -181,6 +182,7 @@ func parse(data []byte) (*Config, error) {
 	raw.Exporters.OTLP.Batch.ExportTimeout = 10 * time.Second
 	raw.Exporters.OTLP.Retry.Enabled = true
 	raw.Exporters.OTLP.Retry.MaxElapsedTime = 300 * time.Second
+	raw.Exporters.OTLP.ShutdownTimeout = 10 * time.Second
 
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
@@ -356,6 +358,9 @@ func validateOTLP(o OTLPExporterConfig) error {
 	}
 	if (o.TLS.CertFile == "") != (o.TLS.KeyFile == "") {
 		return errors.New("exporters.otlp.tls: cert_file and key_file must both be set or both be empty")
+	}
+	if o.ShutdownTimeout <= 0 {
+		return errors.New("exporters.otlp.shutdown_timeout must be positive")
 	}
 	return nil
 }

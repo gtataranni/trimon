@@ -49,7 +49,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### SEC-14 · LOW — Make OTLP Close() flush timeout configurable
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** SEC-08 (if SEC-08 is completed first, `OTLPExporterConfig` may move to a new struct; add the field to wherever it lands)  
 **Files:** `internal/exporter/otlp/otlp.go` (`Close()` method)  
 **Context:** `Close()` uses a hard-coded 30-second timeout. In fast-shutdown environments (e.g., Kubernetes with 30s `terminationGracePeriodSeconds`), this competes with the pod's grace period. A configurable timeout would let operators tune it.  
