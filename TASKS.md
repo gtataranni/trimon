@@ -49,7 +49,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### SEC-11 · MEDIUM — Validate label keys against OTel naming rules
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/config/config.go` (label validation in `mergeAndValidateProbes`)  
 **Context:** User-defined labels from config are forwarded as OTel attributes. OTel requires attribute keys to match `^[a-zA-Z_][a-zA-Z0-9_.\-]*$`. Labels with newlines, control characters, or invalid chars silently corrupt metrics or cause OTel SDK panics.  
 **Action:**

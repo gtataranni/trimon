@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/gtataranni/trimon/pkg/types"
 )
+
+var labelKeyRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.\-]*$`)
 
 // GlobalConfig holds daemon-wide defaults.
 type GlobalConfig struct {
@@ -318,6 +322,14 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		labels := r.Labels
 		if labels == nil {
 			labels = make(map[string]string)
+		}
+		for k, v := range labels {
+			if !labelKeyRE.MatchString(k) {
+				return nil, fmt.Errorf("probe %q: label key %q is not a valid OTel attribute name", r.Name, k)
+			}
+			if strings.ContainsAny(v, "\n\r\t") {
+				return nil, fmt.Errorf("probe %q: label %q value contains control characters", r.Name, k)
+			}
 		}
 
 		out = append(out, types.ProbeConfig{

@@ -494,6 +494,83 @@ probes: []
 	}
 }
 
+func TestLabelValidation(t *testing.T) {
+	base := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+  - name: lbl
+    type: icmp
+    target: "127.0.0.1"
+    labels:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+	}{
+		{
+			name:    "valid key and value",
+			snippet: `      env: production`,
+			wantErr: false,
+		},
+		{
+			name:    "valid key with dots and dashes",
+			snippet: `      service.name-v2: api`,
+			wantErr: false,
+		},
+		{
+			name:    "valid key starting with underscore",
+			snippet: `      _internal: true`,
+			wantErr: false,
+		},
+		{
+			name:    "key starting with digit is rejected",
+			snippet: `      "1bad": val`,
+			wantErr: true,
+		},
+		{
+			name:    "key with space is rejected",
+			snippet: `      "bad key": val`,
+			wantErr: true,
+		},
+		{
+			name:    "key with newline is rejected",
+			snippet: "      \"bad\\nkey\": val",
+			wantErr: true,
+		},
+		{
+			name:    "value with newline is rejected",
+			snippet: "      env: \"pro\\nduction\"",
+			wantErr: true,
+		},
+		{
+			name:    "value with tab is rejected",
+			snippet: "      env: \"pro\\tduction\"",
+			wantErr: true,
+		},
+		{
+			name:    "value with carriage return is rejected",
+			snippet: "      env: \"pro\\rduction\"",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(base + tc.snippet + "\n"))
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestOTLPValidation(t *testing.T) {
 	base := `
 global:
