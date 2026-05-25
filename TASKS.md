@@ -149,7 +149,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-05 · MEDIUM — Add IsUp() / IsSuccess() helpers to avoid scattered switch statements
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `pkg/types/types.go`, `internal/exporter/otlp/otlp.go`  
 **Context:** The OTLP exporter has a large switch on `r.Status` to decide whether to set `upVal=1` or `successVal=1`. This duplicates knowledge of what each status value means. Adding a new status in the future would require updating every switch site.  
 **Action:**

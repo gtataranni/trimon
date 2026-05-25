@@ -250,25 +250,25 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		successVal, upVal                  int64
 	)
 
-	if r.Status != types.StatusError {
+	if !r.Status.IsError() {
 		e.pktSent.Add(ctx, int64(r.PacketsSent), probeAttrs)
 		e.pktReceived.Add(ctx, int64(r.PacketsReceived), probeAttrs)
 	}
 
-	switch r.Status {
-	case types.StatusSuccess, types.StatusPartial:
+	switch {
+	case r.Status.IsUp():
 		rttMin = r.RTTMinMS
 		rttMean = r.RTTMeanMS
 		rttMax = r.RTTMaxMS
 		rttStddev = r.RTTStddevMS
 		packetLoss = r.PacketLossRatio
 		upVal = 1
-		if r.Status == types.StatusSuccess {
+		if r.Status.IsSuccess() {
 			successVal = 1
 		}
-	case types.StatusFailure:
+	case r.Status == types.StatusFailure:
 		packetLoss = 1.0
-	case types.StatusError:
+	case r.Status.IsError():
 		packetLoss = math.NaN()
 		errType := r.ErrorType
 		if errType == "" {

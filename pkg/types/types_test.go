@@ -62,6 +62,31 @@ func TestStatusConstants(t *testing.T) {
 	}
 }
 
+func TestStatusHelpers(t *testing.T) {
+	cases := []struct {
+		s         Status
+		isSuccess bool
+		isUp      bool
+		isError   bool
+	}{
+		{StatusSuccess, true, true, false},
+		{StatusPartial, false, true, false},
+		{StatusFailure, false, false, false},
+		{StatusError, false, false, true},
+	}
+	for _, tc := range cases {
+		if got := tc.s.IsSuccess(); got != tc.isSuccess {
+			t.Errorf("%s.IsSuccess(): want %v, got %v", tc.s, tc.isSuccess, got)
+		}
+		if got := tc.s.IsUp(); got != tc.isUp {
+			t.Errorf("%s.IsUp(): want %v, got %v", tc.s, tc.isUp, got)
+		}
+		if got := tc.s.IsError(); got != tc.isError {
+			t.Errorf("%s.IsError(): want %v, got %v", tc.s, tc.isError, got)
+		}
+	}
+}
+
 func TestErrorMsgOmitEmpty(t *testing.T) {
 	r := ProbeResult{Status: StatusSuccess}
 	b, _ := json.Marshal(r)

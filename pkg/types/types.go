@@ -12,6 +12,10 @@ const (
 	StatusError   Status = "error"   // probe could not execute
 )
 
+func (s Status) IsSuccess() bool { return s == StatusSuccess }
+func (s Status) IsUp() bool      { return s == StatusSuccess || s == StatusPartial }
+func (s Status) IsError() bool   { return s == StatusError }
+
 // ProbeConfig holds per-probe configuration after parsing and validation.
 type ProbeConfig struct {
 	Name           string            `yaml:"name"`
