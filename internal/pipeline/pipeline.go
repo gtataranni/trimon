@@ -8,25 +8,28 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
-const bufferSize = 1000
-
 // Pipeline fans results from a shared channel out to all registered exporters.
 type Pipeline struct {
-	results         chan types.ProbeResult
-	exporters       []exporter.Exporter
-	logger          *slog.Logger
-	done            chan struct{}
-	onExportError   func(ctx context.Context, exporterName string)
+	results       chan types.ProbeResult
+	exporters     []exporter.Exporter
+	logger        *slog.Logger
+	done          chan struct{}
+	onExportError func(ctx context.Context, exporterName string)
 }
 
-// New creates a Pipeline with a buffered results channel of size 1000.
-func New(exporters []exporter.Exporter, logger *slog.Logger) *Pipeline {
+// New creates a Pipeline with a buffered results channel of the given size.
+func New(exporters []exporter.Exporter, logger *slog.Logger, bufferSize int) *Pipeline {
 	return &Pipeline{
 		results:   make(chan types.ProbeResult, bufferSize),
 		exporters: exporters,
 		logger:    logger,
 		done:      make(chan struct{}),
 	}
+}
+
+// BufferUsage returns the fraction of the results channel currently occupied (0.0–1.0).
+func (p *Pipeline) BufferUsage() float64 {
+	return float64(len(p.results)) / float64(cap(p.results))
 }
 
 // Results returns the write end of the results channel for probe goroutines.

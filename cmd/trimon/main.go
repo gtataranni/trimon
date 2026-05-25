@@ -77,8 +77,9 @@ func main() {
 	if cfg.Exporters.Stdout.Enabled {
 		exporters = append(exporters, stdoutexp.New(cfg.Exporters.Stdout.Format))
 	}
-	pipe := pipeline.New(exporters, logger)
+	pipe := pipeline.New(exporters, logger, cfg.Pipeline.BufferSize)
 	pipe.SetExportErrorRecorder(exp.RecordExporterError)
+	srv.SetHealthChecker(pipe.BufferUsage)
 
 	sched := scheduler.New(probeFactory, pipe.Results(), logger)
 	exp.SetGoroutinesGetter(sched.WorkerCount)

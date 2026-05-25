@@ -129,7 +129,7 @@ probes:
 
 	captured := make(chan types.ProbeResult, 10)
 	exporters := []exporter.Exporter{exp, &captureExporter{ch: captured}}
-	pipe := pipeline.New(exporters, logger)
+	pipe := pipeline.New(exporters, logger, cfg.Pipeline.BufferSize)
 	pipe.SetExportErrorRecorder(exp.RecordExporterError)
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {

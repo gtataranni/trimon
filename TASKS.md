@@ -61,7 +61,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### SEC-15 · LOW — Extend /healthz to reflect pipeline buffer saturation
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** OPT-12 (configurable buffer size makes the saturation threshold more meaningful; do together or OPT-12 first)  
 **Files:** `internal/pipeline/pipeline.go`, `internal/server/server.go`  
 **Context:** `/healthz` always returns `200 OK {"status":"ok"}` even when the results channel is 100% full and results are being dropped. Operators relying on health checks for load balancer routing get a false signal.  
@@ -131,7 +131,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-12 · LOW — Make pipeline buffer size configurable
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** SEC-08 (if SEC-08 is completed first, put `PipelineConfig` in the ops config section, not the probe config section); SEC-15 (depends on this for a meaningful buffer saturation threshold)  
 **Files:** `internal/pipeline/pipeline.go`, `internal/config/config.go`, `cmd/trimon/main.go`  
 **Context:** `bufferSize = 1000` is hardcoded. Deployments with hundreds of fast probes may overflow it; deployments with a handful of slow probes waste memory.  

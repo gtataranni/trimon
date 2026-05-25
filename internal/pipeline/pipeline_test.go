@@ -35,7 +35,7 @@ func testLogger() *slog.Logger {
 
 func TestPipelineDispatchesToExporter(t *testing.T) {
 	exp := &countExporter{}
-	pipe := New([]exporter.Exporter{exp}, testLogger())
+	pipe := New([]exporter.Exporter{exp}, testLogger(), 16)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -59,7 +59,7 @@ func TestPipelineDispatchesToExporter(t *testing.T) {
 
 func TestPipelineDrainsOnCancel(t *testing.T) {
 	exp := &countExporter{}
-	pipe := New([]exporter.Exporter{exp}, testLogger())
+	pipe := New([]exporter.Exporter{exp}, testLogger(), 16)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -81,7 +81,7 @@ func TestPipelineDrainsOnCancel(t *testing.T) {
 
 func TestPipelineMultipleExporters(t *testing.T) {
 	e1, e2 := &countExporter{}, &countExporter{}
-	pipe := New([]exporter.Exporter{e1, e2}, testLogger())
+	pipe := New([]exporter.Exporter{e1, e2}, testLogger(), 16)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -99,8 +99,24 @@ func TestPipelineMultipleExporters(t *testing.T) {
 	}
 }
 
+func TestBufferUsage(t *testing.T) {
+	pipe := New([]exporter.Exporter{}, testLogger(), 10)
+
+	if got := pipe.BufferUsage(); got != 0.0 {
+		t.Errorf("empty buffer: want 0.0, got %v", got)
+	}
+
+	// Fill half the buffer without running the pipeline (no consumer).
+	for i := 0; i < 5; i++ {
+		pipe.results <- types.ProbeResult{ProbeName: "p"}
+	}
+	if got := pipe.BufferUsage(); got != 0.5 {
+		t.Errorf("half-full buffer: want 0.5, got %v", got)
+	}
+}
+
 func TestPipelineWaitReturnsAfterRun(t *testing.T) {
-	pipe := New([]exporter.Exporter{}, testLogger())
+	pipe := New([]exporter.Exporter{}, testLogger(), 16)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go pipe.Run(ctx)

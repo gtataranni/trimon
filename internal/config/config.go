@@ -75,6 +75,11 @@ type ServerConfig struct {
 	Listen string `yaml:"listen"`
 }
 
+// PipelineConfig holds the result-channel pipeline settings.
+type PipelineConfig struct {
+	BufferSize int `yaml:"buffer_size"` // default 1000
+}
+
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
@@ -105,6 +110,7 @@ type rawFile struct {
 	Global    GlobalConfig     `yaml:"global"`
 	Exporters ExportersConfig  `yaml:"exporters"`
 	Server    ServerConfig     `yaml:"server"`
+	Pipeline  PipelineConfig   `yaml:"pipeline"`
 	Probes    []rawProbeConfig `yaml:"probes"`
 }
 
@@ -113,6 +119,7 @@ type Config struct {
 	Global    GlobalConfig
 	Exporters ExportersConfig
 	Server    ServerConfig
+	Pipeline  PipelineConfig
 	Probes    []types.ProbeConfig
 	// SHA256 is the hex-encoded SHA-256 of the raw config file bytes that produced this Config.
 	SHA256 string
@@ -183,6 +190,7 @@ func parse(data []byte) (*Config, error) {
 	raw.Exporters.OTLP.Retry.Enabled = true
 	raw.Exporters.OTLP.Retry.MaxElapsedTime = 300 * time.Second
 	raw.Exporters.OTLP.ShutdownTimeout = 10 * time.Second
+	raw.Pipeline.BufferSize = 1000
 
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
@@ -205,12 +213,17 @@ func parse(data []byte) (*Config, error) {
 		return nil, err
 	}
 
+	if raw.Pipeline.BufferSize <= 0 {
+		return nil, errors.New("pipeline.buffer_size must be positive")
+	}
+
 	sum := sha256.Sum256(data)
 
 	return &Config{
 		Global:    raw.Global,
 		Exporters: raw.Exporters,
 		Server:    raw.Server,
+		Pipeline:  raw.Pipeline,
 		Probes:    probes,
 		SHA256:    hex.EncodeToString(sum[:]),
 	}, nil

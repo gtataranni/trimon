@@ -40,6 +40,42 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestHealthzDegradedWhenBufferSaturated(t *testing.T) {
+	srv := newTestServer()
+	srv.SetHealthChecker(func() float64 { return 0.95 })
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status: want 503, got %d", rr.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+	if body["status"] != "degraded" {
+		t.Errorf("body.status: want degraded, got %q", body["status"])
+	}
+	if _, ok := body["buffer_usage"]; !ok {
+		t.Error("body.buffer_usage should be present in degraded response")
+	}
+}
+
+func TestHealthzOKWhenCheckerBelowThreshold(t *testing.T) {
+	srv := newTestServer()
+	srv.SetHealthChecker(func() float64 { return 0.5 })
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status: want 200, got %d", rr.Code)
+	}
+}
+
 func TestMetrics(t *testing.T) {
 	srv := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)

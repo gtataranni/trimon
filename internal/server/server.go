@@ -16,15 +16,19 @@ import (
 	"github.com/gtataranni/trimon/internal/config"
 )
 
+// healthBufferThreshold is the fraction of pipeline buffer capacity at which /healthz returns 503.
+const healthBufferThreshold = 0.9
+
 // Server is the internal HTTP server exposing /healthz, /metrics, /reload, and /config.
 type Server struct {
 	httpServer     *http.Server
 	metricsHandler http.Handler
 	logger         *slog.Logger
 
-	reloadMu   sync.Mutex
-	reloadFunc func() (*config.Config, error)
-	currentCfg atomic.Pointer[config.Config]
+	reloadMu      sync.Mutex
+	reloadFunc    func() (*config.Config, error)
+	currentCfg    atomic.Pointer[config.Config]
+	healthChecker func() float64
 }
 
 // New wires up routes and returns a ready-to-serve Server.
@@ -51,6 +55,10 @@ func (s *Server) SetReloadFunc(fn func() (*config.Config, error)) { s.reloadFunc
 
 // UpdateConfig replaces the config served by GET /config.
 func (s *Server) UpdateConfig(cfg *config.Config) { s.currentCfg.Store(cfg) }
+
+// SetHealthChecker registers a function that returns the current pipeline buffer usage
+// as a ratio (0.0–1.0). When usage exceeds healthBufferThreshold, /healthz returns 503.
+func (s *Server) SetHealthChecker(fn func() float64) { s.healthChecker = fn }
 
 // SetLogger registers the structured logger used for handler-side errors.
 // If never called, the server logs are silently discarded.
@@ -79,6 +87,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // ── handlers ─────────────────────────────────────────────────────────────────
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	if s.healthChecker != nil {
+		if usage := s.healthChecker(); usage > healthBufferThreshold {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+				"status":       "degraded",
+				"reason":       "results buffer near capacity",
+				"buffer_usage": usage,
+			})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

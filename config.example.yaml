@@ -30,6 +30,9 @@ server:
   # (e.g. when running in a container or behind a reverse proxy).
   listen: "127.0.0.1:8080"
 
+# pipeline:
+#   buffer_size: 1000   # results channel depth; increase for high probe counts
+
 probes:
   - name: ping-google-dns
     type: icmp
