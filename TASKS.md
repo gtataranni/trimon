@@ -48,39 +48,6 @@ Only begin coding once the design is confirmed.
 
 ---
 
-### SEC-11 · MEDIUM — Validate label keys against OTel naming rules
-**Status:** DONE  
-**Files:** `internal/config/config.go` (label validation in `mergeAndValidateProbes`)  
-**Context:** User-defined labels from config are forwarded as OTel attributes. OTel requires attribute keys to match `^[a-zA-Z_][a-zA-Z0-9_.\-]*$`. Labels with newlines, control characters, or invalid chars silently corrupt metrics or cause OTel SDK panics.  
-**Action:**
-1. In `mergeAndValidateProbes()`, after building the `Labels` map, iterate keys and values.
-2. For each key, check against a compiled `regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.\-]*$`)`. Return an error for invalid keys.
-3. For each value, check for control characters (`strings.ContainsAny(v, "\n\r\t")`). Return an error for invalid values.
-4. Add tests for valid and invalid label keys/values.
-
----
-
-### SEC-12 · MEDIUM — Document context.Background() usage in pipeline drain
-**Status:** DONE  
-**Files:** `internal/pipeline/pipeline.go` (line ~51)  
-**Context:** During shutdown drain, the pipeline calls `p.dispatch(context.Background(), result)` instead of the now-cancelled `ctx`. This is intentional — using the cancelled context would cause exporters to skip the final results. But it reads like a bug without explanation.  
-**Action:**
-1. Add a single-line comment before line 51: `// Use Background so exporters can flush results even though the parent context is cancelled.`
-2. No logic change needed.
-
----
-
-### SEC-13 · MEDIUM — Track exporter failures as a metric
-**Status:** DONE  
-**Files:** `internal/pipeline/pipeline.go`, `internal/exporter/otlp/otlp.go`  
-**Context:** When an exporter returns an error, the pipeline logs it and moves on. There is no counter, so an operator cannot alert on repeated exporter failures via Prometheus. If OTLP export silently fails for hours, metrics appear frozen rather than raising an alarm.  
-**Action:**
-1. Add an `exporterErrors` counter instrument in `otlp.go` with name `trimon.exporter.errors` and attribute `exporter.name`.
-2. In pipeline's `dispatch()`, after logging an error, call a registered error callback or (simpler) expose a `RecordDispatchError(exporterName string)` method on each exporter that increments the counter.
-3. Alternatively, add an `ExporterName() string` method to the `Exporter` interface and track failures in pipeline with a local counter that is exposed via the OTel observer.
-
----
-
 ### SEC-14 · LOW — Make OTLP Close() flush timeout configurable
 **Status:** OPEN  
 **See also:** SEC-08 (if SEC-08 is completed first, `OTLPExporterConfig` may move to a new struct; add the field to wherever it lands)  
@@ -106,75 +73,6 @@ Only begin coding once the design is confirmed.
 ---
 
 ## OPTIMIZATION
-
-### OPT-01 · HIGH — Add unit tests for ICMP prober
-**Status:** DONE  
-**See also:** OPT-06 (if OPT-06 is done first, include `ErrorType` coverage in the tests here; otherwise revisit after OPT-06)  
-**Files:** `internal/probe/icmp/icmp_test.go` (create new file)  
-**Context:** `icmp.go` has zero tests. The status determination, RTT conversion, and packet loss calculation are entirely untested. This is the most critical untested path in the codebase — bugs here corrupt all exported metrics.  
-**Action:**
-1. Create `internal/probe/icmp/icmp_test.go`.
-2. The ICMP prober uses the `probing` library which opens real sockets. Use the build tag `//go:build integration` for tests requiring real sockets, and table-driven unit tests with a mock/stub pinger for the logic paths.
-3. Required test cases:
-   - `TestStatusDetermination`: verify that `PacketLoss=0` → `StatusSuccess`, `0 < PacketLoss < 1` → `StatusPartial`, `PacketLoss=1` → `StatusFailure`, socket error → `StatusError`.
-   - `TestRTTConversion`: verify RTT values from pinger stats are correctly converted to milliseconds (not seconds, not microseconds).
-   - `TestFieldsPopulatedOnSuccess`: verify all `ProbeResult` fields are non-zero on a successful probe.
-   - `TestFieldsOnError`: verify `Status=StatusError`, `ErrorMsg` is set, RTT fields are zero.
-   - `TestSourceIPPassthrough`: verify `p.cfg.SourceIP` is passed to pinger.
-
----
-
-### OPT-03 · HIGH — Fix Scheduler.Stop() lock cycling
-**Status:** DONE  
-**Files:** `internal/scheduler/scheduler.go` (`Stop()` and `stopLocked()`)  
-**Context:** `Stop()` calls `stopLocked()` which releases the mutex to wait on `<-w.done`, then re-acquires it. This means each worker is stopped sequentially with lock cycling between each. With many probes, this serializes an operation that could be parallelized.  
-**Action:**
-1. Refactor `Stop()` to: (a) hold the lock, collect all `cancel` functions and `done` channels, delete all workers from the map, then release the lock; (b) call all `cancel()` functions outside the lock; (c) range over `done` channels and block on each.
-2. Remove the lock-release/re-acquire pattern from `stopLocked()` or make it a simple helper that only cancels (not waits).
-3. The `Reload()` path (which calls `stopLocked()` selectively) should also be updated consistently.
-
----
-
-### OPT-04 · MEDIUM — Eliminate redundant nil-Labels → empty-map coercion
-**Status:** DONE  
-**Files:** `internal/config/config.go` (~line 252), `internal/exporter/stdout/stdout.go` (~line 74), `internal/server/server.go` (~line 172)  
-**Context:** Three places convert `nil` Labels to `make(map[string]string)`. This wastes one allocation per probe per call site. The correct fix is to keep `nil` as the canonical "no labels" value and handle it at serialization boundaries only.  
-**Action:**
-1. In `config.go` `mergeAndValidateProbes()`, remove the nil-to-empty-map conversion. Leave `Labels` as nil when not configured.
-2. In `stdout.go` `writeJSON()`, keep the coercion (`if labels == nil { labels = map[string]string{} }`) only here since JSON must emit `{}` not `null`.
-3. In `server.go` `toConfigDump()`, same: keep coercion only in the DTO builder.
-4. In `otlp.go` `buildAttrs()`, the loop `for k, v := range r.Labels` already handles nil maps safely (ranging a nil map is a no-op in Go) — no change needed there.
-5. Update `config_test.go` to assert that a probe with no labels results in `ProbeConfig.Labels == nil`.
-
----
-
-### OPT-05 · MEDIUM — Add IsUp() / IsSuccess() helpers to avoid scattered switch statements
-**Status:** DONE  
-**Files:** `pkg/types/types.go`, `internal/exporter/otlp/otlp.go`  
-**Context:** The OTLP exporter has a large switch on `r.Status` to decide whether to set `upVal=1` or `successVal=1`. This duplicates knowledge of what each status value means. Adding a new status in the future would require updating every switch site.  
-**Action:**
-1. Add to `pkg/types/types.go`:
-   ```go
-   func (s Status) IsSuccess() bool { return s == StatusSuccess }
-   func (s Status) IsUp() bool      { return s == StatusSuccess || s == StatusPartial }
-   func (s Status) IsError() bool   { return s == StatusError }
-   ```
-2. Refactor `otlp.go` Export() to use these methods instead of the switch block where it simplifies the code.
-3. Add tests for these methods in `pkg/types/types_test.go`.
-
----
-
-### OPT-06 · MEDIUM — Add error type categorization to ProbeResult
-**Status:** DONE  
-**Files:** `pkg/types/types.go`, `internal/probe/icmp/icmp.go`, `internal/exporter/otlp/otlp.go`  
-**Context:** When `Status=StatusError`, the `error.type="probe_error"` attribute is hardcoded in the OTLP exporter. Operators cannot distinguish DNS failures from socket errors from timeout errors in their dashboards.  
-**Action:**
-1. Add `ErrorType string` field to `ProbeResult` in `pkg/types/types.go`.
-2. In `icmp.go`, set `ErrorType` to specific values: `"dns_failure"` when `probing.NewPinger` fails with a resolution error, `"socket_error"` when pinger.Run fails with a permissions error, `"timeout"` when context deadline is exceeded.
-3. In `otlp.go`, replace the hardcoded `"probe_error"` with `r.ErrorType` (with a fallback to `"unknown"` if empty).
-4. Update stdout exporter to include `ErrorType` in JSON output (as `"error_type"` field, omitempty).
-
----
 
 ### OPT-07 · MEDIUM — Add integration smoke test for cmd/trimon/main.go
 **Status:** OPEN  
