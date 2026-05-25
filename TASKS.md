@@ -125,7 +125,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-03 · HIGH — Fix Scheduler.Stop() lock cycling
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/scheduler/scheduler.go` (`Stop()` and `stopLocked()`)  
 **Context:** `Stop()` calls `stopLocked()` which releases the mutex to wait on `<-w.done`, then re-acquires it. This means each worker is stopped sequentially with lock cycling between each. With many probes, this serializes an operation that could be parallelized.  
 **Action:**

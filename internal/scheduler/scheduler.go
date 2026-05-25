@@ -26,7 +26,6 @@ type Scheduler struct {
 type worker struct {
 	cancel context.CancelFunc
 	done   chan struct{}
-	cfg    types.ProbeConfig
 }
 
 // New creates a Scheduler. results must be a buffered channel owned by the caller.
@@ -48,45 +47,29 @@ func (s *Scheduler) Start(cfgs []types.ProbeConfig) {
 	}
 }
 
-// Reload diffs new against running probes: stops removed, starts new, restarts changed.
+// Reload stops all running probes and starts the new set from cfgs.
 func (s *Scheduler) Reload(cfgs []types.ProbeConfig) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	incoming := make(map[string]types.ProbeConfig, len(cfgs))
-	for _, cfg := range cfgs {
-		incoming[cfg.Name] = cfg
-	}
-
-	// Stop probes that are gone or changed.
-	for name, w := range s.workers {
-		newCfg, exists := incoming[name]
-		if !exists || configChanged(w.cfg, newCfg) {
-			s.stopLocked(name)
-		}
-	}
-
-	// Start probes that are new or were just stopped due to change.
-	for _, cfg := range cfgs {
-		if _, running := s.workers[cfg.Name]; !running {
-			s.startLocked(cfg)
-		}
-	}
+	s.Stop()
+	s.Start(cfgs)
 }
 
 // Stop shuts down all probe goroutines and waits for them to exit.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
-	names := make([]string, 0, len(s.workers))
-	for name := range s.workers {
-		names = append(names, name)
+	cancels := make([]context.CancelFunc, 0, len(s.workers))
+	dones := make([]chan struct{}, 0, len(s.workers))
+	for name, w := range s.workers {
+		cancels = append(cancels, w.cancel)
+		dones = append(dones, w.done)
+		delete(s.workers, name)
 	}
 	s.mu.Unlock()
 
-	for _, name := range names {
-		s.mu.Lock()
-		s.stopLocked(name)
-		s.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	for _, done := range dones {
+		<-done
 	}
 }
 
@@ -106,7 +89,7 @@ func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &worker{cancel: cancel, done: make(chan struct{}), cfg: cfg}
+	w := &worker{cancel: cancel, done: make(chan struct{})}
 	s.workers[cfg.Name] = w
 
 	go func() {
@@ -136,25 +119,3 @@ func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 	s.logger.Info("probe started", "name", cfg.Name, "interval", cfg.Interval)
 }
 
-// stopLocked cancels the worker and waits for exit. Must be called with s.mu held.
-func (s *Scheduler) stopLocked(name string) {
-	w, ok := s.workers[name]
-	if !ok {
-		return
-	}
-	w.cancel()
-	delete(s.workers, name)
-	// Wait outside the lock to avoid deadlock if the goroutine tries to acquire it.
-	s.mu.Unlock()
-	<-w.done
-	s.mu.Lock()
-	s.logger.Info("probe stopped", "name", name)
-}
-
-func configChanged(old, new types.ProbeConfig) bool {
-	return old.Target != new.Target ||
-		old.SourceIP != new.SourceIP ||
-		old.Interval != new.Interval ||
-		old.Timeout != new.Timeout ||
-		old.Count != new.Count
-}
