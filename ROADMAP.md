@@ -67,6 +67,7 @@ Goal: trimon becomes genuinely multi-protocol.
 - [ ] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
 - [ ] Per-protocol config schema additions, validated by the config loader
 - [ ] Simple MQTT exporter (`internal/exporter/mqtt`) — publish probe results to an MQTT broker
+- [ ] Consider implementing OPT-13 Unify probe timeout through context; remove pinger.Timeout from ICMP prober.
 
 ---
 
