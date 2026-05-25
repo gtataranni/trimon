@@ -320,9 +320,6 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		}
 
 		labels := r.Labels
-		if labels == nil {
-			labels = make(map[string]string)
-		}
 		for k, v := range labels {
 			if !labelKeyRE.MatchString(k) {
 				return nil, fmt.Errorf("probe %q: label key %q is not a valid OTel attribute name", r.Name, k)

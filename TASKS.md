@@ -136,7 +136,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### OPT-04 · MEDIUM — Eliminate redundant nil-Labels → empty-map coercion
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `internal/config/config.go` (~line 252), `internal/exporter/stdout/stdout.go` (~line 74), `internal/server/server.go` (~line 172)  
 **Context:** Three places convert `nil` Labels to `make(map[string]string)`. This wastes one allocation per probe per call site. The correct fix is to keep `nil` as the canonical "no labels" value and handle it at serialization boundaries only.  
 **Action:**
