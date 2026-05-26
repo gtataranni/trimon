@@ -54,51 +54,7 @@ Only begin coding once the design is confirmed.
 
 ## TRACEABILITY
 
-### TRC-01 · SUSPECT — Document pipeline shutdown contract
-**Status:** DONE  
-**Depends on:** OPT-03 (the comments must describe the refactored shutdown behavior; writing them against the current lock-cycling code means rewriting them again after OPT-03)  
-**Files:** `internal/pipeline/pipeline.go`, `cmd/trimon/main.go`  
-**Context:** The pipeline's results channel is never explicitly closed. Safety depends on the invariant that `sched.Stop()` fully drains all probe workers *before* `cancel()` is called. If this order is violated, workers could try to send on a channel with no receiver after `pipe.Run()` exits.  
-**Action:**
-1. In `pipeline.go`, add a comment at the top of `Run()` explaining the required shutdown sequence: callers must stop all senders before cancelling context.
-2. In `main.go`, add a brief comment at the shutdown block (lines ~108–112) explicitly documenting the order: `// Shutdown order: stop senders → cancel pipeline context → wait for drain → close exporters`.
-3. Consider: after the drain loop exits in `Run()`, close `p.results` so any late sender panics loudly (fail-fast) rather than blocking silently.
-
 ---
-
-### TRC-02 · SUSPECT — Add metric for dropped results
-**Status:** DONE  
-**See also:** SEC-13 (both register new counters in `otlp.go`; coordinate so the two counters are defined together and follow the same naming convention, avoiding separate PRs that each add one instrument)  
-**Files:** `internal/scheduler/scheduler.go` (~lines 127–131)  
-**Context:** When the pipeline buffer is full, the scheduler logs `"results channel full, dropping result"` and silently moves on. This is a warning in logs but invisible in metrics, so operators have no way to alert on it.  
-**Action:**
-1. Add a `trimon.probe.results_dropped_total{probe.name}` counter instrument to `otlp.go`.
-2. Expose a `RecordDroppedResult(probeName string)` method on the OTLP exporter.
-3. In `scheduler.go`, call this method (via the exporter reference or a registered callback) when a result is dropped.
-4. Alternatively, add a `DroppedResults int64` counter to `Pipeline` (accessed via `atomic.Int64`) and expose it via an observable gauge.
-
----
-
-### TRC-03 · SUSPECT — Remove vestigial yaml tags from types.ProbeConfig
-**Status:** DONE  
-**Files:** `pkg/types/types.go`  
-**Context:** `ProbeConfig` has `yaml:"..."` tags on all fields but is never unmarshalled from YAML — it is constructed by `config.go`. The tags are harmless but misleading: they suggest this struct is parsed directly, which could lead a future developer to add YAML parsing logic in the wrong place.  
-**Action:**
-1. Remove all `yaml:"..."` tags from `types.ProbeConfig` fields.
-2. Add a comment on the struct: `// ProbeConfig is the merged, validated probe configuration built by internal/config. It is not directly unmarshalled from YAML.`
-
----
-
-### TRC-04 · SUSPECT — Add omitempty handling for RTT fields in stdout JSON
-**Status:** DONE  
-**See also:** OPT-10 (OPT-10 adds the comments explaining when RTT fields are valid; TRC-04 is the implementation counterpart — do together or OPT-10 first)  
-**Files:** `internal/exporter/stdout/stdout.go`  
-**Context:** The stdout JSON record always emits RTT fields (`rtt_min_ms: 0`, etc.) even when the probe failed and RTTs are undefined. A consumer parsing the JSON cannot distinguish "RTT was measured as 0ms" from "RTT was not measured." The `error_msg` field uses `omitempty` — RTT fields should behave consistently.  
-**Action:**
-1. Change `RTTMinMS`, `RTTMeanMS`, `RTTMaxMS`, `RTTStddevMS`, and `PacketLoss` in `jsonRecord` to use pointer types (`*float64`) so they can be nil/omitted.
-2. In `writeJSON()`, only assign these fields when `r.PacketsReceived > 0` (for RTT) and `r.Status != StatusError` (for PacketLoss).
-3. Add `omitempty` to those json tags.
-4. Update `stdout_test.go` to assert these fields are absent in the error case.
 
 
 # Future tasks to re-evaluate once further down in the roadmap

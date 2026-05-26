@@ -9,7 +9,7 @@ Goal: a runnable daemon that pings configured targets and emits NDJSON to stdout
 - [x] Module scaffold, Makefile, golangci-lint config, Dockerfile
 - [x] `pkg/types` — `ProbeResult`, `ProbeConfig`, status constants
 - [x] `internal/config` — YAML loader + validator (unique names, valid targets, source_ip resolution)
-- [x] `internal/probe/probe.go` — `Probe` interface
+- [x] `internal/probe/prober.go` — `Prober` interface
 - [x] `internal/exporter/exporter.go` — `Exporter` interface
 - [x] `internal/probe/icmp` — raw ICMP, source_ip binding, count + timeout, RTT stats
 - [x] `internal/scheduler` — per-probe goroutine + ticker, start/stop/reload diff
@@ -75,7 +75,6 @@ Goal: trimon becomes genuinely multi-protocol.
 
 Goal: production-grade lifecycle and observability.
 
-- [ ] Hot-reload via HTTP API (`POST /-/reload`) in addition to SIGHUP
 - [ ] Config from a directory of files (merge), not just a single file
 - [ ] Probe-level enable/disable without restart
 - [ ] Per-probe rate limiting / global concurrency cap

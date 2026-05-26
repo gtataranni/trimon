@@ -82,18 +82,22 @@ trimon/
 ├── internal/
 │   ├── config/                 # YAML load, validate, hot-reload
 │   ├── probe/
-│   │   ├── probe.go            # Probe interface
+│   │   ├── prober.go           # Prober interface
 │   │   └── icmp/               # ICMP impl
 │   ├── scheduler/              # per-probe ticker + lifecycle
 │   ├── pipeline/               # buffered result channel, fan-in/out
 │   ├── exporter/
 │   │   ├── exporter.go         # Exporter interface
+│   │   ├── otlp/               # OTLP exporter + OTel instrument definitions
 │   │   └── stdout/             # stdout impl (json + text)
-│   └── server/                 # HTTP /healthz + /metrics
+│   └── server/                 # HTTP /healthz, /metrics, /config, /reload
 ├── pkg/types/                  # ProbeResult, ProbeConfig, Status consts
+├── docs/                       # design docs (metrics.md, etc.)
 ├── config.example.yaml
 ├── Dockerfile
 ├── Makefile
+├── ROADMAP.md
+├── TASKS.md
 └── README.md
 ```
 
@@ -105,7 +109,8 @@ trimon/
 make build       # build ./bin/trimon
 make test        # go test ./... with race detector
 make lint        # golangci-lint run
-make docker      # build container image with CAP_NET_RAW
+make container   # build container image (podman by default)
+make release V=vX.Y.Z  # tag and build a release
 
 ./bin/trimon --config config.example.yaml --log-level debug
 ```
@@ -118,7 +123,7 @@ sudo setcap cap_net_raw+ep ./bin/trimon
 ## Conventions
 
 - **Errors:** wrap with `fmt.Errorf("context: %w", err)`. No bare returns of upstream errors.
-- **Logging:** structured (`log/slog`), JSON by default, text when `--log-format=text`, logfmt also supported.
+- **Logging:** structured (`log/slog`), JSON by default, text when `--log-format=text`.
 - **Context:** every blocking call takes a `context.Context`. No `context.Background()` outside `main`.
 - **Concurrency:** every goroutine has a clear owner and a shutdown path (context cancel or close channel). No fire-and-forget.
 - **Tests:** table-driven. Required for `internal/config` (validation), `pkg/types`, `internal/scheduler` (lifecycle), `internal/exporter/stdout` (output shape).
@@ -180,6 +185,6 @@ Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR
 
 ## When in doubt
 
-1. Re-read the relevant interface in `internal/probe/probe.go` or `internal/exporter/exporter.go`.
+1. Re-read the relevant interface in `internal/probe/prober.go` or `internal/exporter/exporter.go`.
 2. Check the current phase's checklist in [ROADMAP.md](ROADMAP.md) — if the task isn't on it, it's probably out of scope for this iteration.
 3. Prefer adding a comment that states an assumption over asking; flag the assumption in the PR description and in the summary at the end of agent cycles.
