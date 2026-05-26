@@ -124,6 +124,7 @@ sudo setcap cap_net_raw+ep ./bin/trimon
 - **Tests:** table-driven. Required for `internal/config` (validation), `pkg/types`, `internal/scheduler` (lifecycle), `internal/exporter/stdout` (output shape).
 - **No global state** outside `cmd/trimon/main.go`.
 - **Commits:** conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
+Use "Assisted-by: AGENT_NAME:MODEL_VERSION" instead of "Co-Authored-By: name email"
 - **Build**: use `bin/` as target dir, or use `make` commands
 
 ## Status semantics — get this right
