@@ -1,0 +1,158 @@
+services:
+  target-fiber:
+    build:
+      context: .
+      dockerfile: Dockerfile.target
+    container_name: multiline-target-fiber
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NETEM_ARGS=delay 15ms 3ms
+    networks:
+      wan0-net:
+        ipv4_address: 172.20.0.100
+
+  target-cable:
+    build:
+      context: .
+      dockerfile: Dockerfile.target
+    container_name: multiline-target-cable
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NETEM_ARGS=delay 70ms 20ms loss 3%
+    networks:
+      wan1-net:
+        ipv4_address: 172.21.0.100
+
+  target-vsat:
+    build:
+      context: .
+      dockerfile: Dockerfile.target
+    container_name: multiline-target-vsat
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NETEM_ARGS=delay 600ms 60ms loss 1%
+    networks:
+      wan2-net:
+        ipv4_address: 172.22.0.100
+
+  critical-dc:
+    image: alpine:3.21
+    container_name: multiline-critical-dc
+    command: ["sleep", "infinity"]
+    networks:
+      mgmt-net:
+        ipv4_address: 172.23.0.10
+
+  critical-dns:
+    image: alpine:3.21
+    container_name: multiline-critical-dns
+    command: ["sleep", "infinity"]
+    networks:
+      mgmt-net:
+        ipv4_address: 172.23.0.20
+
+  trimon:
+    build:
+      context: ../../
+      target: debug
+    image: trimon:dev
+    container_name: multiline-trimon
+    cap_add:
+      - NET_RAW
+    command: ["--config", "/etc/trimon/config.yaml", "--probes", "/etc/trimon/probes.yaml"]
+    volumes:
+      - ./config.yaml:/etc/trimon/config.yaml:ro
+      - ./probes.yaml:/etc/trimon/probes.yaml:ro
+    ports:
+      - "8081:8080"
+    depends_on:
+      - otelcol
+      - target-fiber
+      - target-cable
+      - target-vsat
+      - critical-dc
+      - critical-dns
+    networks:
+      wan0-net:
+        ipv4_address: 172.20.0.2
+      wan1-net:
+        ipv4_address: 172.21.0.2
+      wan2-net:
+        ipv4_address: 172.22.0.2
+      mgmt-net:
+        ipv4_address: 172.23.0.2
+      observability:
+    restart: unless-stopped
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: multiline-otelcol
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4319:4317"   # OTLP gRPC
+      - "4320:4318"   # OTLP HTTP
+      - "8890:8889"   # Prometheus exporter
+    networks:
+      - observability
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: multiline-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - multiline_prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    depends_on:
+      - otelcol
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: multiline-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - multiline_grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - observability
+
+volumes:
+  multiline_prometheus_data:
+  multiline_grafana_data:
+
+networks:
+  wan0-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  wan1-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+  wan2-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+  mgmt-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
+  observability:
+    driver: bridge
