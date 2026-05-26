@@ -1,6 +1,6 @@
 global:
   probe_every: 15s
-  timeout: 5s
+  timeout: 6s
   count: 5
   source_ip: ""
 

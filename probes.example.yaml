@@ -15,7 +15,7 @@ probes:
     target: "dns.google"   # can be hostname or address
     source_ip: "192.168.1.10"   # must be an IP assigned to a local interface
     probe_every: 10s
-    timeout: 2s
+    timeout: 6s
     count: 5
     labels:
       probe_id: "wan0"

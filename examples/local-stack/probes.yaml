@@ -9,6 +9,7 @@ probes:
     type: icmp
     target: "8.8.8.8"
     count: 10
+    timeout: 11s
 
   - name: ping-cloudflare-dns
     type: icmp

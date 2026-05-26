@@ -10,7 +10,7 @@ probes:
   - name: ping-google-dns
     type: icmp
     target: "dns.google"
-    timeout: 2s
+    timeout: 11s
     count: 10
     labels:
       probe_id: "wan0"
