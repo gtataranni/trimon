@@ -49,11 +49,11 @@ func TestJSONOutput(t *testing.T) {
 	if rec.Status != "success" {
 		t.Errorf("status: want success, got %q", rec.Status)
 	}
-	if rec.RTTMeanMS != 2.2 {
-		t.Errorf("rtt_mean_ms: want 2.2, got %f", rec.RTTMeanMS)
+	if rec.RTTMeanMS == nil || *rec.RTTMeanMS != 2.2 {
+		t.Errorf("rtt_mean_ms: want 2.2, got %v", rec.RTTMeanMS)
 	}
-	if rec.PacketLoss != 0.0 {
-		t.Errorf("packet_loss: want 0.0, got %f", rec.PacketLoss)
+	if rec.PacketLoss == nil || *rec.PacketLoss != 0.0 {
+		t.Errorf("packet_loss: want 0.0, got %v", rec.PacketLoss)
 	}
 	if rec.Labels["env"] != "prod" {
 		t.Errorf("label env: want prod, got %q", rec.Labels["env"])
@@ -110,6 +110,27 @@ func TestTextOutput(t *testing.T) {
 	}
 	if !strings.Contains(line, "loss=0%") {
 		t.Errorf("text output missing loss: %q", line)
+	}
+}
+
+func TestJSONRTTOmittedOnError(t *testing.T) {
+	var buf bytes.Buffer
+	e := newWithWriter(&buf, "json")
+
+	r := sampleResult()
+	r.Status = types.StatusError
+	r.PacketsReceived = 0
+	r.PacketsSent = 0
+	r.RTTMinMS, r.RTTMeanMS, r.RTTMaxMS, r.RTTStddevMS = 0, 0, 0, 0
+	r.PacketLossRatio = 0
+	r.ErrorMsg = "socket error"
+	_ = e.Export(context.Background(), r)
+
+	raw := buf.String()
+	for _, field := range []string{"rtt_min_ms", "rtt_mean_ms", "rtt_max_ms", "rtt_stddev_ms", "packet_loss"} {
+		if strings.Contains(raw, field) {
+			t.Errorf("field %q should be absent on status=error, got: %s", field, raw)
+		}
 	}
 }
 

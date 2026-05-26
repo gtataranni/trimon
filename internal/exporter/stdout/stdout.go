@@ -12,21 +12,24 @@ import (
 )
 
 // jsonRecord is the NDJSON shape for JSON mode.
+// RTT and PacketLoss fields are *float64 so omitempty can distinguish "not measured"
+// from a legitimate zero. This struct is write-only (only ever passed to Encode),
+// so nil-checks are confined to tests.
 type jsonRecord struct {
-	TS           string            `json:"ts"`
-	Probe        string            `json:"probe"`
-	Type         string            `json:"type"`
-	Target       string            `json:"target"`
-	SourceIP     string            `json:"source_ip"`
-	Status       string            `json:"status"`
-	RTTMeanMS    float64           `json:"rtt_mean_ms"`
-	RTTMinMS     float64           `json:"rtt_min_ms"`
-	RTTMaxMS     float64           `json:"rtt_max_ms"`
-	RTTStddevMS  float64           `json:"rtt_stddev_ms"`
-	PacketLoss   float64           `json:"packet_loss"`
-	ErrorMsg     string            `json:"error_msg,omitempty"`
-	ErrorType    string            `json:"error_type,omitempty"`
-	Labels       map[string]string `json:"labels"`
+	TS          string            `json:"ts"`
+	Probe       string            `json:"probe"`
+	Type        string            `json:"type"`
+	Target      string            `json:"target"`
+	SourceIP    string            `json:"source_ip"`
+	Status      string            `json:"status"`
+	RTTMeanMS   *float64          `json:"rtt_mean_ms,omitempty"`
+	RTTMinMS    *float64          `json:"rtt_min_ms,omitempty"`
+	RTTMaxMS    *float64          `json:"rtt_max_ms,omitempty"`
+	RTTStddevMS *float64          `json:"rtt_stddev_ms,omitempty"`
+	PacketLoss  *float64          `json:"packet_loss,omitempty"`
+	ErrorMsg    string            `json:"error_msg,omitempty"`
+	ErrorType   string            `json:"error_type,omitempty"`
+	Labels      map[string]string `json:"labels"`
 }
 
 // Exporter writes results to w in either JSON or text format.
@@ -61,20 +64,24 @@ func (e *Exporter) Close() error { return nil }
 
 func (e *Exporter) writeJSON(r types.ProbeResult) error {
 	rec := jsonRecord{
-		TS:          r.Timestamp.UTC().Format(time.RFC3339),
-		Probe:       r.ProbeName,
-		Type:        r.ProbeType,
-		Target:      r.Target,
-		SourceIP:    r.SourceIP,
-		Status:      string(r.Status),
-		RTTMeanMS:   r.RTTMeanMS,
-		RTTMinMS:    r.RTTMinMS,
-		RTTMaxMS:    r.RTTMaxMS,
-		RTTStddevMS: r.RTTStddevMS,
-		PacketLoss:  r.PacketLossRatio,
-		ErrorMsg:    r.ErrorMsg,
-		ErrorType:   r.ErrorType,
-		Labels:      r.Labels,
+		TS:        r.Timestamp.UTC().Format(time.RFC3339),
+		Probe:     r.ProbeName,
+		Type:      r.ProbeType,
+		Target:    r.Target,
+		SourceIP:  r.SourceIP,
+		Status:    string(r.Status),
+		ErrorMsg:  r.ErrorMsg,
+		ErrorType: r.ErrorType,
+		Labels:    r.Labels,
+	}
+	if r.PacketsReceived > 0 {
+		rec.RTTMeanMS = &r.RTTMeanMS
+		rec.RTTMinMS = &r.RTTMinMS
+		rec.RTTMaxMS = &r.RTTMaxMS
+		rec.RTTStddevMS = &r.RTTStddevMS
+	}
+	if r.Status != types.StatusError {
+		rec.PacketLoss = &r.PacketLossRatio
 	}
 	if rec.Labels == nil {
 		rec.Labels = map[string]string{}

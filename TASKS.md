@@ -90,7 +90,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### TRC-04 · SUSPECT — Add omitempty handling for RTT fields in stdout JSON
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** OPT-10 (OPT-10 adds the comments explaining when RTT fields are valid; TRC-04 is the implementation counterpart — do together or OPT-10 first)  
 **Files:** `internal/exporter/stdout/stdout.go`  
 **Context:** The stdout JSON record always emits RTT fields (`rtt_min_ms: 0`, etc.) even when the probe failed and RTTs are undefined. A consumer parsing the JSON cannot distinguish "RTT was measured as 0ms" from "RTT was not measured." The `error_msg` field uses `omitempty` — RTT fields should behave consistently.  
