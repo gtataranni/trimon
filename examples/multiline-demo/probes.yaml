@@ -1,0 +1,58 @@
+global:
+  probe_every: 15s
+  timeout: 5s
+  count: 5
+  source_ip: ""
+
+probes:
+  - name: fiber-internet-gw
+    type: icmp
+    target: "172.20.0.100"
+    source_ip: "172.20.0.2"
+    count: 5
+    labels:
+      wan_line: fiber
+      provider: fiber-isp
+      target_type: internet_gateway
+
+  - name: cable-internet-gw
+    type: icmp
+    target: "172.21.0.100"
+    source_ip: "172.21.0.2"
+    count: 5
+    labels:
+      wan_line: cable
+      provider: cable-isp
+      target_type: internet_gateway
+
+  - name: vsat-internet-gw
+    type: icmp
+    target: "172.22.0.100"
+    source_ip: "172.22.0.2"
+    count: 5
+    packet_interval: 500ms
+    timeout: 8s
+    labels:
+      wan_line: vsat
+      provider: vsat-provider
+      target_type: internet_gateway
+
+  - name: critical-dc
+    type: icmp
+    target: "172.23.0.10"
+    source_ip: "172.23.0.2"
+    count: 3
+    probe_every: 10s
+    labels:
+      target_type: corp_dc
+      priority: critical
+
+  - name: critical-dns
+    type: icmp
+    target: "172.23.0.20"
+    source_ip: "172.23.0.2"
+    count: 3
+    probe_every: 10s
+    labels:
+      target_type: corp_dns
+      priority: critical

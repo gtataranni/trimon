@@ -1,0 +1,18 @@
+exporters:
+  stdout:
+    enabled: false
+    format: json
+  otlp:
+    enabled: true
+    endpoint: "otelcol:4317"
+    protocol: grpc
+    insecure: true
+    batch:
+      export_interval: 15s
+      export_timeout: 5s
+    retry:
+      enabled: true
+      max_elapsed_time: 60s
+
+server:
+  listen: ":8080"
