@@ -39,6 +39,13 @@ func (p *Pipeline) Results() chan<- types.ProbeResult {
 
 // Run reads from the results channel and dispatches to all exporters.
 // It blocks until ctx is cancelled, then drains remaining results.
+//
+// Shutdown contract: all senders (probe goroutines) MUST have stopped
+// sending before ctx is cancelled. If a sender fires after ctx.Done(),
+// that result races with the non-blocking drain and may be silently lost.
+// In practice this is enforced by calling sched.Stop() before cancel().
+// After draining, Run closes p.results so any late sender panics immediately
+// rather than blocking forever.
 func (p *Pipeline) Run(ctx context.Context) {
 	defer close(p.done)
 	for {
@@ -56,6 +63,7 @@ func (p *Pipeline) Run(ctx context.Context) {
 					// Use Background so exporters can flush results even though the parent context is cancelled.
 					p.dispatch(context.Background(), result)
 				default:
+					close(p.results)
 					return
 				}
 			}

@@ -114,6 +114,9 @@ func main() {
 
 	sig := <-sigCh
 	logger.Info("shutting down", "signal", sig)
+	// Shutdown order: stop senders → cancel pipeline context → wait for drain → close exporters.
+	// sched.Stop() blocks until every probe goroutine has exited, guaranteeing no further
+	// sends on the results channel before cancel() triggers pipeline drain.
 	sched.Stop()
 	cancel()
 	pipe.Wait()
