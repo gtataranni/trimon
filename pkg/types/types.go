@@ -16,17 +16,17 @@ func (s Status) IsSuccess() bool { return s == StatusSuccess }
 func (s Status) IsUp() bool      { return s == StatusSuccess || s == StatusPartial }
 func (s Status) IsError() bool   { return s == StatusError }
 
-// ProbeConfig holds per-probe configuration after parsing and validation.
+// ProbeConfig is the merged, validated probe configuration built by internal/config.
 type ProbeConfig struct {
-	Name           string            `yaml:"name"`
-	Type           string            `yaml:"type"`
-	Target         string            `yaml:"target"`
-	SourceIP       string            `yaml:"source_ip"`
-	Interval       time.Duration     `yaml:"probe_every"`     // scheduler cadence: how often to run the probe
-	PacketInterval time.Duration     `yaml:"packet_interval"` // pro-bing: wait between individual ICMP echo sends
-	Timeout        time.Duration     `yaml:"timeout"`
-	Count          int               `yaml:"count"`
-	Labels         map[string]string `yaml:"labels"`
+	Name           string
+	Type           string
+	Target         string
+	SourceIP       string
+	Interval       time.Duration // scheduler cadence: how often to run the probe
+	PacketInterval time.Duration // pro-bing: wait between individual ICMP echo sends
+	Timeout        time.Duration
+	Count          int
+	Labels         map[string]string
 }
 
 // ProbeResult is the output of a single probe run.

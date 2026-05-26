@@ -55,7 +55,7 @@ Only begin coding once the design is confirmed.
 ## TRACEABILITY
 
 ### TRC-01 · SUSPECT — Document pipeline shutdown contract
-**Status:** OPEN  
+**Status:** DONE  
 **Depends on:** OPT-03 (the comments must describe the refactored shutdown behavior; writing them against the current lock-cycling code means rewriting them again after OPT-03)  
 **Files:** `internal/pipeline/pipeline.go`, `cmd/trimon/main.go`  
 **Context:** The pipeline's results channel is never explicitly closed. Safety depends on the invariant that `sched.Stop()` fully drains all probe workers *before* `cancel()` is called. If this order is violated, workers could try to send on a channel with no receiver after `pipe.Run()` exits.  
