@@ -83,6 +83,7 @@ func main() {
 
 	sched := scheduler.New(probeFactory, pipe.Results(), logger)
 	exp.SetGoroutinesGetter(sched.WorkerCount)
+	sched.SetDroppedResultRecorder(exp.RecordDroppedResult)
 
 	srv.SetReloadFunc(func() (*config.Config, error) {
 		newCfg, loadErr := config.Load(*configPath)

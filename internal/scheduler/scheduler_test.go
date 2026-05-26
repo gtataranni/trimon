@@ -12,6 +12,7 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
+
 // countProbe counts how many times Run is called.
 type countProbe struct {
 	name  string
@@ -92,6 +93,44 @@ func TestSchedulerWorkerCount(t *testing.T) {
 
 	if got := sched.WorkerCount(); got != 0 {
 		t.Errorf("expected 0 workers after stop, got %d", got)
+	}
+}
+
+// TestDroppedResultRecorder verifies that the callback registered via
+// SetDroppedResultRecorder is invoked when the results channel is full.
+func TestDroppedResultRecorder(t *testing.T) {
+	// Zero-capacity channel: every send will drop.
+	results := make(chan types.ProbeResult, 0)
+	var dropped atomic.Int64
+	var droppedName string
+
+	factory := func(cfg types.ProbeConfig) (probe.Prober, error) {
+		return &countProbe{name: cfg.Name}, nil
+	}
+	sched := New(factory, results, testLogger())
+	sched.SetDroppedResultRecorder(func(_ context.Context, probeName string) {
+		dropped.Add(1)
+		droppedName = probeName
+	})
+
+	cfg := types.ProbeConfig{
+		Name:     "drop-probe",
+		Type:     "test",
+		Target:   "127.0.0.1",
+		SourceIP: "127.0.0.1",
+		Interval: 20 * time.Millisecond,
+		Timeout:  time.Second,
+		Count:    1,
+	}
+	sched.Start([]types.ProbeConfig{cfg})
+	time.Sleep(150 * time.Millisecond)
+	sched.Stop()
+
+	if dropped.Load() == 0 {
+		t.Error("expected dropped result callback to have been called at least once")
+	}
+	if droppedName != "drop-probe" {
+		t.Errorf("dropped probe name: got %q, want %q", droppedName, "drop-probe")
 	}
 }
 

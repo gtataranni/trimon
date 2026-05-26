@@ -601,6 +601,7 @@ func TestAllMetricsPresent(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 	e.RecordExporterError(ctx, "otlp")
+	e.RecordDroppedResult(ctx, "smoke")
 
 	ms := collectMetrics(t, reader)
 	names := make(map[string]bool, len(ms))
@@ -619,6 +620,7 @@ func TestAllMetricsPresent(t *testing.T) {
 		"trimon.probe.success",
 		"trimon.probe.up",
 		"trimon.probe.runs",
+		"trimon.probe.results_dropped",
 		"trimon.build.info",
 		"trimon.scheduler.goroutines",
 		"trimon.exporter.errors",
@@ -755,6 +757,29 @@ func TestExporterErrorsCounter(t *testing.T) {
 	stdoutCount := findInt64CounterByAttr(t, ms, "trimon.exporter.errors", "exporter.name", "stdout")
 	if stdoutCount != 1 {
 		t.Errorf("exporter.errors[stdout]: got %d, want 1", stdoutCount)
+	}
+}
+
+// TestDroppedResultsCounter verifies that RecordDroppedResult increments
+// trimon.probe.results_dropped with the correct probe.name attribute.
+func TestDroppedResultsCounter(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	e.RecordDroppedResult(ctx, "probe-a")
+	e.RecordDroppedResult(ctx, "probe-a")
+	e.RecordDroppedResult(ctx, "probe-b")
+
+	ms := collectMetrics(t, reader)
+
+	aCount := findInt64CounterByAttr(t, ms, "trimon.probe.results_dropped", "probe.name", "probe-a")
+	if aCount != 2 {
+		t.Errorf("results_dropped[probe-a]: got %d, want 2", aCount)
+	}
+
+	bCount := findInt64CounterByAttr(t, ms, "trimon.probe.results_dropped", "probe.name", "probe-b")
+	if bCount != 1 {
+		t.Errorf("results_dropped[probe-b]: got %d, want 1", bCount)
 	}
 }
 

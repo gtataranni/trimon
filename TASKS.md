@@ -67,7 +67,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### TRC-02 · SUSPECT — Add metric for dropped results
-**Status:** OPEN  
+**Status:** DONE  
 **See also:** SEC-13 (both register new counters in `otlp.go`; coordinate so the two counters are defined together and follow the same naming convention, avoiding separate PRs that each add one instrument)  
 **Files:** `internal/scheduler/scheduler.go` (~lines 127–131)  
 **Context:** When the pipeline buffer is full, the scheduler logs `"results channel full, dropping result"` and silently moves on. This is a warning in logs but invisible in metrics, so operators have no way to alert on it.  
@@ -80,7 +80,7 @@ Only begin coding once the design is confirmed.
 ---
 
 ### TRC-03 · SUSPECT — Remove vestigial yaml tags from types.ProbeConfig
-**Status:** OPEN  
+**Status:** DONE  
 **Files:** `pkg/types/types.go`  
 **Context:** `ProbeConfig` has `yaml:"..."` tags on all fields but is never unmarshalled from YAML — it is constructed by `config.go`. The tags are harmless but misleading: they suggest this struct is parsed directly, which could lead a future developer to add YAML parsing logic in the wrong place.  
 **Action:**

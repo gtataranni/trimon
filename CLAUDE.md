@@ -166,6 +166,7 @@ any user-defined labels from the probe config. `probe.status` is **never** an at
 - `trimon_build_info{version, commit, goversion}` — gauge, value 1
 - `trimon_probe_runs_total{probe.name}` — counter
 - `trimon_probe_errors_total{probe.name, error.type}` — counter
+- `trimon_probe_results_dropped_total{probe.name}` — counter, incremented when the pipeline buffer is full and a result is dropped
 - `trimon_scheduler_goroutines` — gauge
 - `trimon_config_reloads_total` — counter
 

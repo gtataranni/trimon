@@ -10,14 +10,20 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
+// DroppedResultRecorder is called when a probe result is dropped because the
+// results channel is full. probeName identifies the probe that produced the
+// dropped result.
+type DroppedResultRecorder func(ctx context.Context, probeName string)
+
 // ProberFactory constructs a Prober from a ProbeConfig.
 type ProberFactory func(cfg types.ProbeConfig) (probe.Prober, error)
 
 // Scheduler manages one goroutine per probe and fans results into Results.
 type Scheduler struct {
-	factory ProberFactory
-	results chan<- types.ProbeResult
-	logger  *slog.Logger
+	factory          ProberFactory
+	results          chan<- types.ProbeResult
+	logger           *slog.Logger
+	onDroppedResult  DroppedResultRecorder
 
 	mu      sync.Mutex
 	workers map[string]*worker
@@ -80,6 +86,12 @@ func (s *Scheduler) WorkerCount() int {
 	return len(s.workers)
 }
 
+// SetDroppedResultRecorder registers a callback invoked whenever a probe result
+// is dropped because the results channel is full. Must be called before Start.
+func (s *Scheduler) SetDroppedResultRecorder(fn DroppedResultRecorder) {
+	s.onDroppedResult = fn
+}
+
 // startLocked must be called with s.mu held.
 func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 	p, err := s.factory(cfg)
@@ -111,6 +123,9 @@ func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 				case s.results <- result:
 				default:
 					s.logger.Warn("results channel full, dropping result", "probe", cfg.Name)
+					if s.onDroppedResult != nil {
+						s.onDroppedResult(ctx, cfg.Name)
+					}
 				}
 			}
 		}

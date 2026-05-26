@@ -51,6 +51,7 @@ type Exporter struct {
 	// self-observability instruments
 	probeRuns      metric.Int64Counter
 	probeErrors    metric.Int64Counter
+	resultsDropped metric.Int64Counter
 	exporterErrors metric.Int64Counter
 	configReloads  metric.Int64Counter
 
@@ -133,6 +134,12 @@ func (e *Exporter) RecordConfigReload(ctx context.Context) {
 	e.configReloads.Add(ctx, 1)
 }
 
+// RecordDroppedResult increments the results-dropped counter for the named probe.
+// Intended to be passed as a callback to scheduler.SetDroppedResultRecorder.
+func (e *Exporter) RecordDroppedResult(ctx context.Context, probeName string) {
+	e.resultsDropped.Add(ctx, 1, metric.WithAttributes(attribute.String("probe.name", probeName)))
+}
+
 // RecordExporterError increments the exporter-error counter for the named exporter.
 // Intended to be passed as a callback to pipeline.SetExportErrorRecorder.
 func (e *Exporter) RecordExporterError(ctx context.Context, exporterName string) {
@@ -188,6 +195,10 @@ func (e *Exporter) registerInstruments(meter metric.Meter, version, commit strin
 		return err
 	}
 	e.probeErrors, err = meter.Int64Counter("trimon.probe.errors", metric.WithUnit("{errors}"))
+	if err != nil {
+		return err
+	}
+	e.resultsDropped, err = meter.Int64Counter("trimon.probe.results_dropped", metric.WithUnit("{results}"))
 	if err != nil {
 		return err
 	}
