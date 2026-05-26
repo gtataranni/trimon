@@ -1,92 +1,94 @@
 # trimon
 
-**T**arget **R**eachability **I**nspection and **MON**itoring
+*Push-based multi-line **T**arget **R**eachability **I**nspection and **MON**itoring for multi-homed networks*
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.22+-00ADD8.svg)](https://golang.org/)
 
-trimon is an open-source, push-based multi-protocol IP target monitoring daemon.
-It runs ICMP echo probes on a configurable schedule, streams results through a
-pluggable exporter pipeline, and exposes self-observability metrics in Prometheus
-text format. The OTel SDK is wired in for future OTLP export.
+trimon is an open-source, push-based multi-protocol IP target monitoring daemon that exports results to the OpenTelemetry stack. It is particularly useful in multi-line environments and SD-WAN setups where routing agents need continuous per-interface latency signals — not scrape-triggered snapshots. Pull-based tools like blackbox_exporter only measure when scraped, creating gaps between scrape intervals. trimon pushes results continuously from each source IP, running one goroutine per probe on its own configurable schedule.
+
+---
+
+## Multi-line demo
+
+WIP
+
+---
+
+## Key features
+
+- **Push-based:** probes run on schedule, results export continuously — no scrape gaps
+- **Multi-line `source_ip` per probe** — bind each probe to a specific interface IP
+- Per-probe cadence override — run critical-path probes more frequently
+- **OTel-native:** single MeterProvider feeds both `/metrics` (Prometheus bridge) and OTLP push
+- Single static binary, no CGO, no runtime dependencies
+
+---
+
+## How it works
+
+```
+config files (--config / --probes)
+    │
+    ▼
+Scheduler  (one goroutine + ticker per probe)
+    │
+    ▼
+Probers  ──── bind to source_ip ────▶ ICMP echo
+    │
+    ▼
+Result pipeline  (buffered channel, fan-in)
+    │
+    ▼
+Exporters ──▶ stdout (optional)
+          └──▶ OTLP ──▶ OTel Collector ──▶ Prometheus ──▶ Grafana
+                    └──▶ Prometheus bridge  (/metrics)
+```
 
 ---
 
 ## Quickstart
 
+### Multi-line demo
+
+WIP
+
 ### Local binary
 
 ```bash
 make build
-sudo setcap cap_net_raw+ep ./bin/trimon   # grant raw socket capability
+sudo setcap cap_net_raw+ep ./bin/trimon
 ./bin/trimon --config config.example.yaml --probes probes.example.yaml
 ```
 
-### Container
-
-```bash
-make container   # builds with podman by default; pass CONTAINER_RUNTIME=docker to use docker
-
-podman run --rm \
-  --name trimon \
-  --cap-add NET_RAW \
-  -p 8080:8080 \
-  -v "$(pwd)/config.docker.yaml:/etc/trimon/config.yaml:ro" \
-  -v "$(pwd)/probes.docker.yaml:/etc/trimon/probes.yaml:ro" \
-  trimon:dev \
-  --config /etc/trimon/config.yaml \
-  --probes /etc/trimon/probes.yaml
-```
-
 ---
 
-## Requirements
-
-### CAP_NET_RAW (Linux)
-
-ICMP probes require raw IP sockets. Run the binary as one of:
-
-- `root`, or
-- grant the capability: `sudo setcap cap_net_raw+ep ./bin/trimon`
-- container: pass `--cap-add NET_RAW` to `docker run` / `podman run`
-
-Without this, probes report `status: error` with
-`"open raw socket (CAP_NET_RAW required): ..."`.
-
----
-
-## CLI flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--config` | *(required)* | Path to the ops config YAML (exporters, server, pipeline) |
-| `--probes` | *(required)* | Path to the probe config YAML (targets, intervals, labels) |
-| `--log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-| `--log-format` | `json` | Log format: `json`, `text` |
-
----
-
-## Config reference
+## Configuration reference
 
 trimon uses two config files:
 
 - **[config.example.yaml](config.example.yaml)** — ops config (`--config`): exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
 - **[probes.example.yaml](probes.example.yaml)** — probe config (`--probes`): global probe defaults and target list. Safe to expose to unprivileged users; returned by `GET /config`.
 
-See [docs/config-split.md](docs/config-split.md) for the full design rationale.
+See [docs/config.md](docs/config.md) for the full design rationale.
+
+**Probe fields:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `name` | *(required)* | Unique probe identifier |
+| `type` | *(required)* | Probe type (`icmp`) |
+| `target` | *(required)* | Destination IP or hostname |
+| `source_ip` | `""` (OS default) | Source interface IP to bind to |
+| `probe_every` | global | How often to run this probe |
+| `timeout` | global | Per-probe timeout |
+| `count` | global | Number of ICMP packets per run |
+| `packet_interval` | `1s` | Wait between individual packets |
+| `labels` | `{}` | Arbitrary key-value labels attached to all metrics |
 
 ---
 
-## HTTP endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/healthz` | Returns `200 {"status":"ok"}` while the process is running |
-| `GET` | `/metrics` | Prometheus text format, self-observability metrics |
-| `GET` | `/config` | Active config as JSON (pass `Accept: application/x-yaml` for YAML) |
-| `POST` | `/reload` | Reload config from disk without restarting |
-
-### Prometheus metrics
+## Metrics reference
 
 All metrics are served via the OTel Prometheus bridge. Instruments are defined once in
 `internal/exporter/otlp/otlp.go` and exported to both `/metrics` and an optional OTLP
@@ -113,8 +115,35 @@ collector simultaneously.
 | `trimon_build_info` | Gauge | `version`, `commit`, `goversion` |
 | `trimon_probe_runs_total` | Counter | `probe.name` |
 | `trimon_probe_errors_total` | Counter | `probe.name`, `error.type` |
+| `trimon_probe_results_dropped_total` | Counter | `probe.name` — incremented when pipeline buffer is full |
 | `trimon_scheduler_goroutines` | Gauge | — |
 | `trimon_config_reloads_total` | Counter | — |
+
+---
+
+## HTTP endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/healthz` | Returns `200 {"status":"ok"}` while the process is running |
+| `GET` | `/metrics` | Prometheus text format, self-observability metrics |
+| `GET` | `/config` | Active config as JSON (pass `Accept: application/x-yaml` for YAML) |
+| `POST` | `/reload` | Reload config from disk without restarting |
+
+---
+
+## Requirements
+
+### CAP_NET_RAW (Linux)
+
+ICMP probes require raw IP sockets. Run the binary as one of:
+
+- `root`, or
+- grant the capability: `sudo setcap cap_net_raw+ep ./bin/trimon`
+- container: pass `--cap-add NET_RAW` to `docker run` / `podman run`
+
+Without this, probes report `status: error` with
+`"open raw socket (CAP_NET_RAW required): ..."`.
 
 ---
 
