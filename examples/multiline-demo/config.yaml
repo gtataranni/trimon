@@ -8,7 +8,7 @@ exporters:
     protocol: grpc
     insecure: true
     batch:
-      export_interval: 15s
+      export_interval: 5s
       export_timeout: 5s
     retry:
       enabled: true
