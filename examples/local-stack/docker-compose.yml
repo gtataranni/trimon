@@ -7,8 +7,10 @@ services:
     container_name: trimon-dev
     cap_add:
       - NET_RAW
+    command: ["--config", "/etc/trimon/config.yaml", "--probes", "/etc/trimon/probes.yaml"]
     volumes:
-      - ./trimon.yaml:/etc/trimon/config.yaml:ro
+      - ./config.yaml:/etc/trimon/config.yaml:ro
+      - ./probes.yaml:/etc/trimon/probes.yaml:ro
     ports:
       - "8080:8080"
     depends_on:
