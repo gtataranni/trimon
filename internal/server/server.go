@@ -166,13 +166,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // ── config dump DTO ───────────────────────────────────────────────────────────
 //
 // Durations are serialised as strings ("10s") so the output is human-readable
-// and round-trips back to a valid config file.
+// and round-trips back to a valid probe config file.
+// Ops fields (exporters, server, pipeline) are intentionally omitted.
 
 type configDump struct {
-	Global    globalDump    `json:"global" yaml:"global"`
-	Exporters exportersDump `json:"exporters" yaml:"exporters"`
-	Server    serverDump    `json:"server" yaml:"server"`
-	Probes    []probeDump   `json:"probes" yaml:"probes"`
+	Global globalDump  `json:"global" yaml:"global"`
+	Probes []probeDump `json:"probes" yaml:"probes"`
 }
 
 type globalDump struct {
@@ -181,19 +180,6 @@ type globalDump struct {
 	Timeout        string `json:"timeout" yaml:"timeout"`
 	Count          int    `json:"count" yaml:"count"`
 	SourceIP       string `json:"source_ip,omitempty" yaml:"source_ip,omitempty"`
-}
-
-type exportersDump struct {
-	Stdout stdoutDump `json:"stdout" yaml:"stdout"`
-}
-
-type stdoutDump struct {
-	Enabled bool   `json:"enabled" yaml:"enabled"`
-	Format  string `json:"format" yaml:"format"`
-}
-
-type serverDump struct {
-	Listen string `json:"listen" yaml:"listen"`
 }
 
 type probeDump struct {
@@ -235,13 +221,6 @@ func toConfigDump(cfg *config.Config) configDump {
 			Count:          cfg.Global.Count,
 			SourceIP:       cfg.Global.SourceIP,
 		},
-		Exporters: exportersDump{
-			Stdout: stdoutDump{
-				Enabled: cfg.Exporters.Stdout.Enabled,
-				Format:  cfg.Exporters.Stdout.Format,
-			},
-		},
-		Server: serverDump{Listen: cfg.Server.Listen},
 		Probes: probes,
 	}
 }

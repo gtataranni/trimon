@@ -1,0 +1,22 @@
+# Example probe config for container deployments, passed via --probes flag.
+
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+  source_ip: ""   # empty = use the container's default interface
+
+probes:
+  - name: ping-google-dns
+    type: icmp
+    target: "dns.google"
+    timeout: 2s
+    count: 10
+    labels:
+      probe_id: "wan0"
+
+  - name: ping-cloudflare-dns
+    type: icmp
+    target: "1.1.1.1"
+    labels:
+      probe_id: "wan0"

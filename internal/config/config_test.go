@@ -2,25 +2,31 @@ package config
 
 import (
 	"net"
+	"os"
 	"testing"
 	"time"
 )
 
+// minValidProbeYAML is the smallest probe config that passes all validators.
+const minValidProbeYAML = `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes: []
+`
+
+// minValidOpsYAML is the smallest ops config that passes all validators.
+// Empty bytes are also valid (all defaults apply), but this makes intent explicit.
+const minValidOpsYAML = ``
+
 func TestParseValid(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
   count: 3
   source_ip: "127.0.0.1"
-
-exporters:
-  stdout:
-    enabled: true
-    format: json
-
-server:
-  listen: ":9090"
 
 probes:
   - name: loopback
@@ -32,7 +38,16 @@ probes:
     labels:
       env: test
 `
-	cfg, err := parse([]byte(yaml))
+	opsYAML := `
+exporters:
+  stdout:
+    enabled: true
+    format: json
+
+server:
+  listen: ":9090"
+`
+	cfg, err := parse([]byte(opsYAML), []byte(probeYAML))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -55,7 +70,7 @@ probes:
 }
 
 func TestDuplicateProbeName(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -69,14 +84,14 @@ probes:
     type: icmp
     target: "127.0.0.1"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
 		t.Fatal("expected duplicate name error, got nil")
 	}
 }
 
 func TestUnknownProbeType(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -87,15 +102,14 @@ probes:
     type: grpc
     target: "127.0.0.1"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
 		t.Fatal("expected unknown type error, got nil")
 	}
 }
 
 func TestEmptySourceIPIsValid(t *testing.T) {
-	// Empty source_ip is intentional: the OS picks the interface.
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -105,14 +119,14 @@ probes:
     type: icmp
     target: "127.0.0.1"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
 		t.Fatalf("expected no error for empty source_ip, got: %v", err)
 	}
 }
 
 func TestInvalidSourceIP(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -123,14 +137,14 @@ probes:
     target: "127.0.0.1"
     source_ip: "not-an-ip"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
 		t.Fatal("expected error for invalid source_ip, got nil")
 	}
 }
 
 func TestGlobalSourceIPFallback(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -141,7 +155,7 @@ probes:
     type: icmp
     target: "127.0.0.1"
 `
-	cfg, err := parse([]byte(yaml))
+	cfg, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,30 +165,24 @@ probes:
 }
 
 func TestInvalidExporterFormat(t *testing.T) {
-	yaml := `
-global:
-  probe_every: 30s
-  timeout: 5s
-  count: 3
-  source_ip: "127.0.0.1"
+	opsYAML := `
 exporters:
   stdout:
     format: xml
-probes: []
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(opsYAML), []byte(minValidProbeYAML))
 	if err == nil {
 		t.Fatal("expected invalid format error, got nil")
 	}
 }
 
 func TestGlobalDefaults(t *testing.T) {
-	yaml := `
+	probeYAML := `
 global:
   source_ip: "127.0.0.1"
 probes: []
 `
-	cfg, err := parse([]byte(yaml))
+	cfg, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +193,7 @@ probes: []
 		t.Errorf("default count: want 3, got %d", cfg.Global.Count)
 	}
 	if cfg.Exporters.Stdout.Format != "json" {
-		t.Errorf("default format: want json, got %q", cfg.Exporters.Stdout.Format)
+		t.Errorf("default stdout format: want json, got %q", cfg.Exporters.Stdout.Format)
 	}
 	if cfg.Server.Listen != "127.0.0.1:8080" {
 		t.Errorf("default listen: want 127.0.0.1:8080, got %q", cfg.Server.Listen)
@@ -193,14 +201,7 @@ probes: []
 }
 
 func TestOTLPDefaults(t *testing.T) {
-	y := `
-global:
-  probe_every: 30s
-  timeout: 5s
-  count: 3
-probes: []
-`
-	cfg, err := parse([]byte(y))
+	cfg, err := parse([]byte(minValidOpsYAML), []byte(minValidProbeYAML))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -223,18 +224,15 @@ probes: []
 }
 
 func TestNonLocalSourceIPRejected(t *testing.T) {
-	// Stub localInterfaceAddrs to return only loopback so we can use a
-	// deterministic "not-local" IP address without depending on real interfaces.
 	orig := localInterfaceAddrs
 	localInterfaceAddrs = func() ([]net.Addr, error) {
 		_, ipnet, _ := net.ParseCIDR("127.0.0.1/8")
-		// Preserve host bits as InterfaceAddrs does.
 		ipnet.IP = net.ParseIP("127.0.0.1").To4()
 		return []net.Addr{ipnet}, nil
 	}
 	defer func() { localInterfaceAddrs = orig }()
 
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -245,14 +243,13 @@ probes:
     target: "127.0.0.1"
     source_ip: "10.0.0.1"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
 		t.Fatal("expected error for non-local source_ip, got nil")
 	}
 }
 
 func TestLocalSourceIPAccepted(t *testing.T) {
-	// Stub localInterfaceAddrs to return a known set of addresses.
 	orig := localInterfaceAddrs
 	localInterfaceAddrs = func() ([]net.Addr, error) {
 		_, loopback, _ := net.ParseCIDR("127.0.0.1/8")
@@ -261,7 +258,7 @@ func TestLocalSourceIPAccepted(t *testing.T) {
 	}
 	defer func() { localInterfaceAddrs = orig }()
 
-	yaml := `
+	probeYAML := `
 global:
   probe_every: 30s
   timeout: 5s
@@ -272,15 +269,13 @@ probes:
     target: "127.0.0.1"
     source_ip: "127.0.0.1"
 `
-	_, err := parse([]byte(yaml))
+	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
 		t.Fatalf("expected no error for local source_ip, got: %v", err)
 	}
 }
 
 func TestProbeTimingBounds(t *testing.T) {
-	// Each case overrides one bound in a probe to verify the helper rejects
-	// values outside the accepted range. The base probe has valid defaults.
 	cases := []struct {
 		name      string
 		probeYAML string
@@ -306,7 +301,6 @@ func TestProbeTimingBounds(t *testing.T) {
 `,
 			wantErr: false,
 		},
-		// Cross-field: packet_interval * count < timeout
 		{
 			name: "packet_interval * count equal to timeout is rejected",
 			probeYAML: `
@@ -346,7 +340,6 @@ func TestProbeTimingBounds(t *testing.T) {
 `,
 			wantErr: false,
 		},
-		// Cross-field: timeout < probe_every
 		{
 			name: "timeout equal to probe_every is rejected",
 			probeYAML: `
@@ -398,7 +391,7 @@ probes:`
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parse([]byte(baseProbe + tc.probeYAML))
+			_, err := parse([]byte(minValidOpsYAML), []byte(baseProbe+tc.probeYAML))
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -410,8 +403,6 @@ probes:`
 }
 
 func TestGlobalTimingBounds(t *testing.T) {
-	// Verifies the helper is also wired into validateGlobal: an out-of-range
-	// global default must be rejected even when no probes are configured.
 	cases := []struct {
 		name    string
 		yaml    string
@@ -429,7 +420,6 @@ probes: []
 `,
 			wantErr: true,
 		},
-		// Cross-field: packet_interval * count < timeout
 		{
 			name: "global packet_interval * count equal to timeout is rejected",
 			yaml: `
@@ -454,7 +444,6 @@ probes: []
 `,
 			wantErr: true,
 		},
-		// Cross-field: timeout < probe_every
 		{
 			name: "global timeout equal to probe_every is rejected",
 			yaml: `
@@ -483,7 +472,7 @@ probes: []
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parse([]byte(tc.yaml))
+			_, err := parse([]byte(minValidOpsYAML), []byte(tc.yaml))
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -560,7 +549,7 @@ probes:
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parse([]byte(base + tc.snippet + "\n"))
+			_, err := parse([]byte(minValidOpsYAML), []byte(base+tc.snippet+"\n"))
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -572,12 +561,7 @@ probes:
 }
 
 func TestOTLPValidation(t *testing.T) {
-	base := `
-global:
-  probe_every: 30s
-  timeout: 5s
-  count: 3
-probes: []
+	opsBase := `
 exporters:
   otlp:
 `
@@ -664,7 +648,7 @@ exporters:
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parse([]byte(base + tc.snippet))
+			_, err := parse([]byte(opsBase+tc.snippet), []byte(minValidProbeYAML))
 			if tc.wantErr && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -673,4 +657,108 @@ exporters:
 			}
 		})
 	}
+}
+
+func TestLoadTwoFiles(t *testing.T) {
+	opsContent := `
+exporters:
+  stdout:
+    enabled: true
+    format: text
+server:
+  listen: ":9191"
+`
+	probeContent := `
+global:
+  probe_every: 15s
+  timeout: 3s
+  count: 2
+probes:
+  - name: lo
+    type: icmp
+    target: "127.0.0.1"
+`
+	opsFile := writeTempFile(t, opsContent)
+	probeFile := writeTempFile(t, probeContent)
+
+	cfg, err := Load(opsFile, probeFile)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Server.Listen != ":9191" {
+		t.Errorf("server.listen: want :9191, got %q", cfg.Server.Listen)
+	}
+	if cfg.Exporters.Stdout.Format != "text" {
+		t.Errorf("stdout.format: want text, got %q", cfg.Exporters.Stdout.Format)
+	}
+	if cfg.Global.Interval != 15*time.Second {
+		t.Errorf("probe_every: want 15s, got %v", cfg.Global.Interval)
+	}
+	if len(cfg.Probes) != 1 || cfg.Probes[0].Name != "lo" {
+		t.Errorf("probes: want [{lo}], got %v", cfg.Probes)
+	}
+	if cfg.SHA256 == "" {
+		t.Error("SHA256 should not be empty")
+	}
+}
+
+func TestLoadMissingOpsFile(t *testing.T) {
+	probeFile := writeTempFile(t, minValidProbeYAML)
+	_, err := Load("/nonexistent/ops.yaml", probeFile)
+	if err == nil {
+		t.Fatal("expected error for missing ops file, got nil")
+	}
+}
+
+func TestLoadMissingProbeFile(t *testing.T) {
+	opsFile := writeTempFile(t, minValidOpsYAML)
+	_, err := Load(opsFile, "/nonexistent/probes.yaml")
+	if err == nil {
+		t.Fatal("expected error for missing probe file, got nil")
+	}
+}
+
+func TestLoadInvalidOpsFile(t *testing.T) {
+	opsContent := `
+exporters:
+  otlp:
+    enabled: true
+    # endpoint intentionally omitted — should fail validation
+`
+	opsFile := writeTempFile(t, opsContent)
+	probeFile := writeTempFile(t, minValidProbeYAML)
+	_, err := Load(opsFile, probeFile)
+	if err == nil {
+		t.Fatal("expected error for invalid OTLP config, got nil")
+	}
+}
+
+func TestLoadInvalidProbeFile(t *testing.T) {
+	probeContent := `
+global:
+  probe_every: 5s
+  timeout: 10s
+  count: 3
+probes: []
+`
+	opsFile := writeTempFile(t, minValidOpsYAML)
+	probeFile := writeTempFile(t, probeContent)
+	_, err := Load(opsFile, probeFile)
+	if err == nil {
+		t.Fatal("expected error for invalid probe timings (timeout >= probe_every), got nil")
+	}
+}
+
+func writeTempFile(t *testing.T, content string) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "*.yaml")
+	if err != nil {
+		t.Fatalf("creating temp file: %v", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("writing temp file: %v", err)
+	}
+	_ = f.Close()
+	return f.Name()
 }

@@ -18,7 +18,7 @@ import (
 
 var labelKeyRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.\-]*$`)
 
-// GlobalConfig holds daemon-wide defaults.
+// GlobalConfig holds daemon-wide probe defaults.
 type GlobalConfig struct {
 	Interval       time.Duration `yaml:"probe_every"`     // scheduler cadence: how often to run each probe
 	PacketInterval time.Duration `yaml:"packet_interval"` // wait between individual ICMP echo sends (pro-bing Interval)
@@ -105,13 +105,17 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// rawFile is the top-level YAML document shape.
-type rawFile struct {
-	Global    GlobalConfig     `yaml:"global"`
-	Exporters ExportersConfig  `yaml:"exporters"`
-	Server    ServerConfig     `yaml:"server"`
-	Pipeline  PipelineConfig   `yaml:"pipeline"`
-	Probes    []rawProbeConfig `yaml:"probes"`
+// rawProbeFile is the YAML shape of the probe config file (--probes flag).
+type rawProbeFile struct {
+	Global GlobalConfig     `yaml:"global"`
+	Probes []rawProbeConfig `yaml:"probes"`
+}
+
+// rawOpsFile is the YAML shape of the ops config file (--config flag).
+type rawOpsFile struct {
+	Exporters ExportersConfig `yaml:"exporters"`
+	Server    ServerConfig    `yaml:"server"`
+	Pipeline  PipelineConfig  `yaml:"pipeline"`
 }
 
 // Config is the validated, merged configuration.
@@ -121,7 +125,8 @@ type Config struct {
 	Server    ServerConfig
 	Pipeline  PipelineConfig
 	Probes    []types.ProbeConfig
-	// SHA256 is the hex-encoded SHA-256 of the raw config file bytes that produced this Config.
+	// SHA256 is the hex-encoded SHA-256 of the raw probe config file bytes.
+	// It tracks the probe file only since that is the only file hot-reloaded.
 	SHA256 string
 }
 
@@ -158,30 +163,49 @@ func isLocalIP(ip string) (bool, error) {
 	return false, nil
 }
 
-// Load reads and validates the config file at path.
+// Load reads and validates the ops config at opsPath and the probe config at probePath.
 //
-// Single-read semantics: the file is read exactly once into a byte buffer here,
-// then that buffer is passed to parse() and threaded through every validator
-// without any subsequent disk access. This prevents a TOCTOU race where an
-// attacker who can write to the config file swaps in different content between
-// the read and the validation/use phases. Do not introduce a second read of
-// `path` (or any other config file) anywhere in this call chain.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+// Single-read semantics per file: each file is read exactly once into a byte buffer, then
+// parsed and validated without any further disk access. Do not introduce additional reads
+// of either path anywhere in this call chain.
+func Load(opsPath, probePath string) (*Config, error) {
+	opsData, err := os.ReadFile(opsPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
+		return nil, fmt.Errorf("reading ops config: %w", err)
 	}
-	return parse(data)
+	probeData, err := os.ReadFile(probePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading probe config: %w", err)
+	}
+	return parse(opsData, probeData)
 }
 
-func parse(data []byte) (*Config, error) {
-	var raw rawFile
+func parse(opsData, probeData []byte) (*Config, error) {
+	ops, err := parseOpsFile(opsData)
+	if err != nil {
+		return nil, err
+	}
 
-	// Apply defaults before unmarshalling so zero values are distinguishable.
-	raw.Global.Interval = 30 * time.Second
-	raw.Global.PacketInterval = 1 * time.Second
-	raw.Global.Timeout = 5 * time.Second
-	raw.Global.Count = 3
+	global, probes, err := parseProbeFile(probeData)
+	if err != nil {
+		return nil, err
+	}
+
+	sum := sha256.Sum256(probeData)
+
+	return &Config{
+		Global:    global,
+		Exporters: ops.Exporters,
+		Server:    ops.Server,
+		Pipeline:  ops.Pipeline,
+		Probes:    probes,
+		SHA256:    hex.EncodeToString(sum[:]),
+	}, nil
+}
+
+func parseOpsFile(data []byte) (*rawOpsFile, error) {
+	var raw rawOpsFile
+
 	raw.Server.Listen = "127.0.0.1:8080"
 	raw.Exporters.Stdout.Format = "json"
 	raw.Exporters.OTLP.Protocol = "grpc"
@@ -193,40 +217,44 @@ func parse(data []byte) (*Config, error) {
 	raw.Pipeline.BufferSize = 1000
 
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parsing YAML: %w", err)
-	}
-
-	if err := validateGlobal(raw.Global); err != nil {
-		return nil, err
-	}
-
-	probes, err := mergeAndValidateProbes(raw.Probes, raw.Global)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing ops config YAML: %w", err)
 	}
 
 	if raw.Exporters.Stdout.Format != "json" && raw.Exporters.Stdout.Format != "text" {
 		return nil, fmt.Errorf("exporters.stdout.format must be \"json\" or \"text\", got %q", raw.Exporters.Stdout.Format)
 	}
-
 	if err := validateOTLP(raw.Exporters.OTLP); err != nil {
 		return nil, err
 	}
-
 	if raw.Pipeline.BufferSize <= 0 {
 		return nil, errors.New("pipeline.buffer_size must be positive")
 	}
 
-	sum := sha256.Sum256(data)
+	return &raw, nil
+}
 
-	return &Config{
-		Global:    raw.Global,
-		Exporters: raw.Exporters,
-		Server:    raw.Server,
-		Pipeline:  raw.Pipeline,
-		Probes:    probes,
-		SHA256:    hex.EncodeToString(sum[:]),
-	}, nil
+func parseProbeFile(data []byte) (GlobalConfig, []types.ProbeConfig, error) {
+	var raw rawProbeFile
+
+	raw.Global.Interval = 30 * time.Second
+	raw.Global.PacketInterval = 1 * time.Second
+	raw.Global.Timeout = 5 * time.Second
+	raw.Global.Count = 3
+
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML: %w", err)
+	}
+
+	if err := validateGlobal(raw.Global); err != nil {
+		return GlobalConfig{}, nil, err
+	}
+
+	probes, err := mergeAndValidateProbes(raw.Probes, raw.Global)
+	if err != nil {
+		return GlobalConfig{}, nil, err
+	}
+
+	return raw.Global, probes, nil
 }
 
 // validateTimings checks the four timing/count fields shared between the global

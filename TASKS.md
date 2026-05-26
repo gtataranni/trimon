@@ -17,7 +17,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ## SECURITY
 
 ### SEC-08 · HIGH — Split config into user-facing (probes) and ops/sensitive (exporters, TLS, server)
-**Status:** TO BE PLANNED  
+**Status:** DONE
 **Files:** `internal/config/config.go`, `cmd/trimon/main.go`, `internal/server/server.go`, `config.example.yaml`, `config.docker.yaml`  
 **Context:** The `/config` endpoint dumps the full config including OTLP endpoint URLs (may contain credentials), TLS cert/key file paths, and retry settings. These are not fields a typical operator ever needs to inspect at runtime, and they are not fields end-users care about changing frequently. The deeper fix — rather than redacting individual fields — is to split config into two files: a **probe config** (targets, labels, intervals — the thing users edit and want to inspect) and an **ops config** (exporters, TLS, server listen, OTLP endpoint — set once by the platform team and kept secure). The `/config` endpoint then only dumps the probe config file.
 

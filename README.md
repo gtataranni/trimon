@@ -19,7 +19,7 @@ text format. The OTel SDK is wired in for future OTLP export.
 ```bash
 make build
 sudo setcap cap_net_raw+ep ./bin/trimon   # grant raw socket capability
-./bin/trimon --config config.example.yaml
+./bin/trimon --config config.example.yaml --probes probes.example.yaml
 ```
 
 ### Container
@@ -32,7 +32,10 @@ podman run --rm \
   --cap-add NET_RAW \
   -p 8080:8080 \
   -v "$(pwd)/config.docker.yaml:/etc/trimon/config.yaml:ro" \
-  trimon:dev
+  -v "$(pwd)/probes.docker.yaml:/etc/trimon/probes.yaml:ro" \
+  trimon:dev \
+  --config /etc/trimon/config.yaml \
+  --probes /etc/trimon/probes.yaml
 ```
 
 ---
@@ -56,7 +59,8 @@ Without this, probes report `status: error` with
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--config` | `trimon.yaml` | Path to the YAML config file |
+| `--config` | *(required)* | Path to the ops config YAML (exporters, server, pipeline) |
+| `--probes` | *(required)* | Path to the probe config YAML (targets, intervals, labels) |
 | `--log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `--log-format` | `json` | Log format: `json`, `text` |
 
@@ -64,7 +68,12 @@ Without this, probes report `status: error` with
 
 ## Config reference
 
-See [config.example.yaml](config.example.yaml).
+trimon uses two config files:
+
+- **[config.example.yaml](config.example.yaml)** — ops config (`--config`): exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
+- **[probes.example.yaml](probes.example.yaml)** — probe config (`--probes`): global probe defaults and target list. Safe to expose to unprivileged users; returned by `GET /config`.
+
+See [docs/config-split.md](docs/config-split.md) for the full design rationale.
 
 ---
 

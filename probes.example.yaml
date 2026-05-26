@@ -1,0 +1,30 @@
+# Probe config, passed via --probes flag.
+# Contains probe targets, intervals, and labels.
+# Returned verbatim by the /config HTTP endpoint.
+# Safe to expose to unprivileged users.
+
+global:
+  probe_every: 30s   # default probe interval
+  timeout: 5s        # default probe timeout
+  count: 3           # default ICMP echo count
+  source_ip: ""      # set a daemon-wide source IP or override per probe
+
+probes:
+  - name: ping-google-dns
+    type: icmp
+    target: "dns.google"   # can be hostname or address
+    source_ip: "192.168.1.10"   # must be an IP assigned to a local interface
+    probe_every: 10s
+    timeout: 2s
+    count: 5
+    labels:
+      probe_id: "wan0"
+      site: "primary"
+
+  - name: ping-cloudflare-dns
+    type: icmp
+    target: "1.1.1.1"
+    source_ip: "192.168.1.10"
+    probe_every: 30s
+    labels:
+      probe_id: "wan0"

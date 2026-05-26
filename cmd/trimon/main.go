@@ -34,22 +34,32 @@ var (
 )
 
 func main() {
-	configPath := flag.String("config", "trimon.yaml", "path to config file")
+	configPath := flag.String("config", "", "path to ops config file (exporters, server, pipeline)")
+	probesPath := flag.String("probes", "", "path to probe config file (targets, intervals, labels)")
 	logLevel := flag.String("log-level", "info", "log level: debug|info|warn|error")
 	logFormat := flag.String("log-format", "json", "log format: json|text")
 	flag.Parse()
+
+	if *configPath == "" {
+		fmt.Fprintln(os.Stderr, "flag --config is required")
+		os.Exit(1)
+	}
+	if *probesPath == "" {
+		fmt.Fprintln(os.Stderr, "flag --probes is required")
+		os.Exit(1)
+	}
 
 	logger := buildLogger(*logLevel, *logFormat)
 
 	// disable tracing
 	otel.SetTracerProvider(noop.NewTracerProvider())
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(*configPath, *probesPath)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("config loaded", "path", *configPath, "sha256", cfg.SHA256)
+	logger.Info("config loaded", "config", *configPath, "probes", *probesPath, "sha256", cfg.SHA256)
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {
 		switch probeCfg.Type {
@@ -86,7 +96,7 @@ func main() {
 	sched.SetDroppedResultRecorder(exp.RecordDroppedResult)
 
 	srv.SetReloadFunc(func() (*config.Config, error) {
-		newCfg, loadErr := config.Load(*configPath)
+		newCfg, loadErr := config.Load(*configPath, *probesPath)
 		if loadErr != nil {
 			return nil, loadErr
 		}

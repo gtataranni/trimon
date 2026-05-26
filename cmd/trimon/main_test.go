@@ -85,35 +85,44 @@ func TestSmokeWiring(t *testing.T) {
 	port := freePort(t)
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Minimal config: one fast loopback probe, no source_ip (OS picks).
+	// Minimal ops config: server bind address.
+	opsYAML := fmt.Sprintf(`
+server:
+  listen: "%s"
+`, listenAddr)
+
+	// Minimal probe config: one fast loopback probe, no source_ip (OS picks).
 	// Timings: packet_interval(100ms) * count(1) = 100ms < timeout(500ms) < probe_every(1s).
-	cfgYAML := fmt.Sprintf(`
+	probeYAML := `
 global:
   probe_every: 1s
   packet_interval: 100ms
   timeout: 500ms
   count: 1
 
-server:
-  listen: "%s"
-
 probes:
   - name: ping-loopback
     type: icmp
     target: "127.0.0.1"
-`, listenAddr)
+`
 
-	f, err := os.CreateTemp("", "trimon-smoke-*.yaml")
-	if err != nil {
-		t.Fatalf("CreateTemp: %v", err)
+	writeTemp := func(content string) string {
+		f, err := os.CreateTemp("", "trimon-smoke-*.yaml")
+		if err != nil {
+			t.Fatalf("CreateTemp: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(f.Name()) })
+		if _, err := io.WriteString(f, content); err != nil {
+			t.Fatalf("write temp config: %v", err)
+		}
+		f.Close()
+		return f.Name()
 	}
-	t.Cleanup(func() { os.Remove(f.Name()) })
-	if _, err := io.WriteString(f, cfgYAML); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	f.Close()
 
-	cfg, err := config.Load(f.Name())
+	opsFile := writeTemp(opsYAML)
+	probeFile := writeTemp(probeYAML)
+
+	cfg, err := config.Load(opsFile, probeFile)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}

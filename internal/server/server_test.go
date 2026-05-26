@@ -169,6 +169,51 @@ func TestReloadErrorIsSanitized(t *testing.T) {
 	}
 }
 
+func TestConfigEndpointShape(t *testing.T) {
+	srv := newTestServer()
+	srv.UpdateConfig(&config.Config{
+		Global: config.GlobalConfig{
+			Interval:       30 * 1e9,
+			PacketInterval: 1 * 1e9,
+			Timeout:        5 * 1e9,
+			Count:          3,
+		},
+		Probes: []types.ProbeConfig{{Name: "lo", Type: "icmp", Target: "127.0.0.1"}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	rr := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+
+	// Must contain probe fields.
+	if _, ok := body["global"]; !ok {
+		t.Error("body should contain 'global' key")
+	}
+	if _, ok := body["probes"]; !ok {
+		t.Error("body should contain 'probes' key")
+	}
+
+	// Must not contain ops fields.
+	if _, ok := body["exporters"]; ok {
+		t.Error("body must not contain 'exporters' key")
+	}
+	if _, ok := body["server"]; ok {
+		t.Error("body must not contain 'server' key")
+	}
+	if _, ok := body["pipeline"]; ok {
+		t.Error("body must not contain 'pipeline' key")
+	}
+}
+
 func TestMetricsHandlerDelegates(t *testing.T) {
 	srv := New(":0")
 	const sentinel = "# HELP trimon_build_info Build metadata."

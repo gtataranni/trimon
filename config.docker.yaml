@@ -1,8 +1,4 @@
-global:
-  interval: 30s
-  timeout: 5s
-  count: 3
-  source_ip: ""   # empty = use the container's default interface
+# Ops config for container deployments, passed via --config flag.
 
 exporters:
   stdout:
@@ -11,18 +7,3 @@ exporters:
 
 server:
   listen: ":8080"   # bind all interfaces — required inside containers
-
-probes:
-  - name: ping-google-dns
-    type: icmp
-    target: "dns.google"
-    timeout: 2s
-    count: 10
-    labels:
-      probe_id: "wan0"
-
-  - name: ping-cloudflare-dns
-    type: icmp
-    target: "1.1.1.1"
-    labels:
-      probe_id: "wan0"
