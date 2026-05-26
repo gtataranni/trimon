@@ -16,22 +16,6 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 
 ## SECURITY
 
-### SEC-08 · HIGH — Split config into user-facing (probes) and ops/sensitive (exporters, TLS, server)
-**Status:** DONE
-**Files:** `internal/config/config.go`, `cmd/trimon/main.go`, `internal/server/server.go`, `config.example.yaml`, `config.docker.yaml`  
-**Context:** The `/config` endpoint dumps the full config including OTLP endpoint URLs (may contain credentials), TLS cert/key file paths, and retry settings. These are not fields a typical operator ever needs to inspect at runtime, and they are not fields end-users care about changing frequently. The deeper fix — rather than redacting individual fields — is to split config into two files: a **probe config** (targets, labels, intervals — the thing users edit and want to inspect) and an **ops config** (exporters, TLS, server listen, OTLP endpoint — set once by the platform team and kept secure). The `/config` endpoint then only dumps the probe config file.
-
-**Plan required:** Before implementing, produce a written design covering:
-1. What exactly goes in each file — draw the proposed `ProbeConfig` file structure and the proposed `OpsConfig` file structure.
-2. How the two files are loaded (two separate `--config` and `--ops-config` flags? or a single directory? or a `!include` directive?).
-3. How hot-reload works for each — should ops config be reloadable at all, or is it load-once-at-startup?
-4. Backward compatibility — what happens if a user passes a single config file that contains everything (migration path)?
-5. What `/config` exposes after the split, and whether the ops config endpoint should exist at all.
-
-Only begin coding once the design is confirmed. The plan document should be left as a comment on this task or as a separate `docs/config-split.md`.
-
----
-
 ### SEC-10 · MEDIUM — Probe all resolved IPs per hostname target
 **Status:** TO BE PLANNED  
 **Files:** `internal/config/config.go` (`resolveTarget`), `internal/probe/icmp/icmp.go`, `pkg/types/types.go`, `internal/scheduler/scheduler.go`  
