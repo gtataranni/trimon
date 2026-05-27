@@ -11,7 +11,17 @@ trimon is an open-source, push-based multi-protocol IP target monitoring daemon 
 
 ## Multi-line demo
 
-WIP
+→ **[examples/multiline-demo/](examples/multiline-demo/README.md)**
+
+Spins up a Docker Compose stack with three simulated WAN lines (fiber / cable / VSAT) and a pre-built Grafana dashboard showing per-line RTT, packet loss, and jitter side by side.
+
+```bash
+cd examples/multiline-demo
+docker compose up -d --build
+# Grafana: http://localhost:3001  →  trimon | Multi-Line Quality
+```
+
+![trimon Multi-Line Quality dashboard](examples/multiline-demo/multiline-dashboard-banner.png)
 
 ---
 
@@ -51,7 +61,7 @@ Exporters ──▶ stdout (optional)
 
 ### Multi-line demo
 
-WIP
+See [examples/multiline-demo/](examples/multiline-demo/README.md) — the fastest way to see trimon working end-to-end with a full observability stack.
 
 ### Local binary
 
