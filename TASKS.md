@@ -46,6 +46,12 @@ Only begin coding once the design is confirmed.
 
 The correct behaviour is NaN on both `failure` and `error`, mirroring the packet_loss convention already in the codebase.
 
+Additional note: while testing the multiline-demo, bringing down the vsat container, the dashboard shows the RTT 0ms with a green background, which is misleadinig. The background color of dashboards (all example dashboards) should 
+- be tied with up/down
+- or be tied with the behavior/approach chosen
+
+Screenshot for ref: ![screen](tasks/image-opt-18.png)
+
 **Action:**
 1. In `Export()` in `otlp.go`, after the `switch` block, record `math.NaN()` for all four RTT gauges when `!r.Status.IsUp()` (i.e. add an `else` branch to the existing `if r.Status.IsUp()` guard, or restructure the condition). Do not skip the `Record()` call — emit NaN explicitly.
 2. Update the **Notes** column for all four RTT rows in `docs/metrics.md` to read: `NaN on failure/error`.
