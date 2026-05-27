@@ -257,10 +257,10 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 	e.probeRuns.Add(ctx, 1, nameAttr)
 
 	var (
-		rttMin, rttMean, rttMax, rttStddev float64
-		packetLoss                         float64
-		successVal, upVal                  int64
+		packetLoss        float64
+		successVal, upVal int64
 	)
+	rttMin, rttMean, rttMax, rttStddev := math.NaN(), math.NaN(), math.NaN(), math.NaN()
 
 	if !r.Status.IsError() {
 		e.pktSent.Add(ctx, int64(r.PacketsSent), probeAttrs)

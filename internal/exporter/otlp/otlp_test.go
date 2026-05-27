@@ -334,8 +334,8 @@ func TestStatusFailure(t *testing.T) {
 		"trimon.probe.rtt.stddev",
 	} {
 		v, _ := findFloat64Gauge(t, ms, rttName)
-		if v != 0.0 {
-			t.Errorf("%s: got %f, want 0.0", rttName, v)
+		if !math.IsNaN(v) {
+			t.Errorf("%s: got %f, want NaN", rttName, v)
 		}
 	}
 }
@@ -383,8 +383,8 @@ func TestStatusError(t *testing.T) {
 		"trimon.probe.rtt.stddev",
 	} {
 		v, _ := findFloat64Gauge(t, ms, rttName)
-		if v != 0.0 {
-			t.Errorf("%s: got %f, want 0.0", rttName, v)
+		if !math.IsNaN(v) {
+			t.Errorf("%s: got %f, want NaN", rttName, v)
 		}
 	}
 

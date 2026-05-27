@@ -34,29 +34,6 @@ Only begin coding once the design is confirmed.
 
 ## OPTIMIZATION
 
-### OPT-14 · LOW — Emit NaN for RTT gauges on failure/error instead of retaining last value
-**Status:** OPEN  
-**Depends on:** none  
-**Files:** `internal/exporter/otlp/otlp.go`, `docs/metrics.md`, `docs/observability-latency.md`  
-**Context:** RTT gauges (`rtt.min/mean/max/stddev`) are synchronous OTel `Float64Gauge` instruments. On `failure` or `error` status there is no RTT to report. Two approaches were considered:
-
-- **Retain last value** (currently reverted): skip `Record()` calls so the gauge holds its last good measurement. Honest about the current RTT being unknown, but produces a flat line in Grafana during an outage — visually easy to miss if probe_up is not on the same panel.
-- **Record 0ms** (original behaviour): semantically wrong; 0ms RTT is physically impossible and corrupts alerting rules that threshold on latency.
-- **Emit NaN** (desired): consistent with `packet_loss_ratio` which already uses `math.NaN()` on `error`. NaN causes Grafana to **break the graph line**, which is visually striking and unambiguous — more visible than a flat line and honest (means "no measurement").
-
-The correct behaviour is NaN on both `failure` and `error`, mirroring the packet_loss convention already in the codebase.
-
-Additional note: while testing the multiline-demo, bringing down the vsat container, the dashboard shows the RTT 0ms with a green background, which is misleadinig. The background color of dashboards (all example dashboards) should 
-- be tied with up/down
-- or be tied with the behavior/approach chosen
-
-Screenshot for ref: ![screen](tasks/image-opt-18.png)
-
-**Action:**
-1. In `Export()` in `otlp.go`, after the `switch` block, record `math.NaN()` for all four RTT gauges when `!r.Status.IsUp()` (i.e. add an `else` branch to the existing `if r.Status.IsUp()` guard, or restructure the condition). Do not skip the `Record()` call — emit NaN explicitly.
-2. Update the **Notes** column for all four RTT rows in `docs/metrics.md` to read: `NaN on failure/error`.
-3. Remove or update the "Restart behaviour" section added to `docs/observability-latency.md` — the rationale there was written for the "retain last value" approach and no longer applies.
-
 ---
 
 ## TRACEABILITY

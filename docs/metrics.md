@@ -30,15 +30,17 @@ Recorded on every `Export()` call. Attributes: `probe.name`, `probe.type`,
 
 | OTel name | Type | Unit | Prometheus name | Notes |
 |-----------|------|------|-----------------|-------|
-| `trimon.probe.rtt.min` | Float64Gauge | `ms` | `trimon_probe_rtt_min_milliseconds` | 0 on failure/error |
-| `trimon.probe.rtt.mean` | Float64Gauge | `ms` | `trimon_probe_rtt_mean_milliseconds` | 0 on failure/error |
-| `trimon.probe.rtt.max` | Float64Gauge | `ms` | `trimon_probe_rtt_max_milliseconds` | 0 on failure/error |
-| `trimon.probe.rtt.stddev` | Float64Gauge | `ms` | `trimon_probe_rtt_stddev_milliseconds` | 0 on failure/error |
+| `trimon.probe.rtt.min` | Float64Gauge | `ms` | `trimon_probe_rtt_min_milliseconds` | NaN on failure/error |
+| `trimon.probe.rtt.mean` | Float64Gauge | `ms` | `trimon_probe_rtt_mean_milliseconds` | NaN on failure/error |
+| `trimon.probe.rtt.max` | Float64Gauge | `ms` | `trimon_probe_rtt_max_milliseconds` | NaN on failure/error |
+| `trimon.probe.rtt.stddev` | Float64Gauge | `ms` | `trimon_probe_rtt_stddev_milliseconds` | NaN on failure/error |
 | `trimon.probe.packet_loss` | Float64Gauge | `ratio` | `trimon_probe_packet_loss_ratio` | 1.0 on failure, NaN on error |
 | `trimon.probe.packets_sent` | Int64Counter | `{packets}` | `trimon_probe_packets_sent_total` | not incremented on error |
 | `trimon.probe.packets_received` | Int64Counter | `{packets}` | `trimon_probe_packets_received_total` | not incremented on error |
 | `trimon.probe.success` | Int64Gauge | — | `trimon_probe_success` | 1 only if status=success (all packets replied) |
 | `trimon.probe.up` | Int64Gauge | — | `trimon_probe_up` | 1 if status=success or partial (≥1 reply) |
+
+RTT gauges emit `NaN` on `failure` and `error` — rather than `0` or retaining the last value — because 0ms is physically impossible and would corrupt latency alerting thresholds, while NaN causes Grafana to break the graph line, making the absence of measurement visually unambiguous; this mirrors the OTel ecosystem convention and is analogous to how `probe.packet_loss` uses NaN on `error`.
 
 **`probe.success` vs `probe.up`:** intentional semantic difference.
 `probe.up` is the alerting signal (`ALERT IF probe_up == 0`); it is 1 for any partial
