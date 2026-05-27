@@ -42,7 +42,7 @@ Metric spec: **[docs/metrics.md — OTLP exporter metrics](docs/metrics.md)**
 ## Phase 2.5 - v0.2.5: strengthen structure and add demo
 
 - [x] Finish up (most of) items in [TASKS.md](TASKS.md)
-- [ ] Add advanced dashboard example and screenshot
+- [x] Add advanced dashboard example and screenshot
 
 ---
 
