@@ -5,14 +5,19 @@ global:
   source_ip: ""
 
 probes:
-  - name: ping-google-dns
+  - name: internet
     type: icmp
-    target: "8.8.8.8"
+    targets:
+      - "8.8.8.8"
+      - "1.1.1.1"
+      - "dns.google"
     count: 10
     timeout: 11s
 
-  - name: ping-cloudflare-dns
+  - name: openDNS
     type: icmp
-    target: "1.1.1.1"
+    targets:
+      - "208.67.220.220"
+      - "208.67.222.222"
     probe_every: 20s
     count: 8

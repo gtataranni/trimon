@@ -84,7 +84,8 @@ type PipelineConfig struct {
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
 	Type           string            `yaml:"type"`
-	Target         string            `yaml:"target"`
+	Targets        []string          `yaml:"targets"`
+	MaxResolvedIPs int               `yaml:"max_resolved_ips"`
 	SourceIP       string            `yaml:"source_ip"`
 	Interval       *Duration         `yaml:"probe_every"`
 	PacketInterval *Duration         `yaml:"packet_interval"`
@@ -316,11 +317,16 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			return nil, fmt.Errorf("probe %q: unknown type %q (supported: icmp)", r.Name, r.Type)
 		}
 
-		if r.Target == "" {
-			return nil, fmt.Errorf("probe %q: target is required", r.Name)
+		if len(r.Targets) == 0 {
+			return nil, fmt.Errorf("probe %q: targets is required and must have at least one entry", r.Name)
 		}
-		if err := resolveTarget(r.Target); err != nil {
-			return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+		for _, t := range r.Targets {
+			if err := validateOneTarget(t); err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+		}
+		if r.MaxResolvedIPs < 0 {
+			return nil, fmt.Errorf("probe %q: max_resolved_ips must be >= 0", r.Name)
 		}
 
 		// source_ip: per-probe takes precedence, then global default; empty = OS picks.
@@ -375,7 +381,8 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 		out = append(out, types.ProbeConfig{
 			Name:           r.Name,
 			Type:           r.Type,
-			Target:         r.Target,
+			Targets:        r.Targets,
+			MaxResolvedIPs: r.MaxResolvedIPs,
 			SourceIP:       sourceIP,
 			Interval:       interval,
 			PacketInterval: packetInterval,
@@ -406,14 +413,14 @@ func validateOTLP(o OTLPExporterConfig) error {
 	return nil
 }
 
-// resolveTarget checks that target is either a valid IP or a resolvable hostname.
-func resolveTarget(target string) error {
-	if net.ParseIP(target) != nil {
+// validateOneTarget checks that entry is either a valid IP or a resolvable hostname.
+func validateOneTarget(entry string) error {
+	if net.ParseIP(entry) != nil {
 		return nil
 	}
-	addrs, err := net.LookupHost(target)
+	addrs, err := net.LookupHost(entry)
 	if err != nil || len(addrs) == 0 {
-		return fmt.Errorf("target %q is not a valid IP and could not be resolved: %v", target, err)
+		return fmt.Errorf("target %q is not a valid IP and could not be resolved: %v", entry, err)
 	}
 	return nil
 }

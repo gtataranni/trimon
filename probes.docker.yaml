@@ -7,16 +7,12 @@ global:
   source_ip: ""   # empty = use the container's default interface
 
 probes:
-  - name: ping-google-dns
+  - name: internet
     type: icmp
-    target: "dns.google"
+    targets:
+      - "dns.google"
+      - "1.1.1.1"
     timeout: 11s
     count: 10
-    labels:
-      probe_id: "wan0"
-
-  - name: ping-cloudflare-dns
-    type: icmp
-    target: "1.1.1.1"
     labels:
       probe_id: "wan0"

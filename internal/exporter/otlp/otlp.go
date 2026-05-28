@@ -315,13 +315,16 @@ func (e *Exporter) Close() error {
 }
 
 func buildAttrs(r types.ProbeResult) metric.MeasurementOption {
-	kv := make([]attribute.KeyValue, 0, 4+len(r.Labels))
+	kv := make([]attribute.KeyValue, 0, 5+len(r.Labels))
 	kv = append(kv,
 		attribute.String("probe.name", r.ProbeName),
 		attribute.String("probe.type", r.ProbeType),
 		attribute.String("probe.target", r.Target),
 		attribute.String("probe.source_ip", r.SourceIP),
 	)
+	if r.FQDN != "" {
+		kv = append(kv, attribute.String("probe.fqdn", r.FQDN))
+	}
 	for k, v := range r.Labels {
 		kv = append(kv, attribute.String(k, v))
 	}

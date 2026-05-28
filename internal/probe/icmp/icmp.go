@@ -3,6 +3,8 @@ package icmp
 import (
 	"context"
 	"fmt"
+	"net"
+	"sync"
 	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
@@ -23,26 +25,93 @@ func New(cfg types.ProbeConfig) *Prober {
 func (p *Prober) Name() string { return p.cfg.Name }
 func (p *Prober) Type() string { return "icmp" }
 
-// Run sends cfg.Count ICMP echo requests and returns aggregated statistics.
-// RTT measurement, sequence/ID validation, and source-address filtering are
-// handled by pro-bing internally, mirroring the approach used by blackbox_exporter.
-func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
+// workItem is a single resolved IP to probe, plus the FQDN it came from (empty
+// for literal-IP targets).
+type workItem struct {
+	ip   string
+	fqdn string
+}
+
+// Run expands the probe's targets list into individual IPs (resolving FQDNs at
+// call time), then pings all IPs in parallel within ctx. One ProbeResult is
+// returned per probed IP. Errors are embedded in each result.
+func (p *Prober) Run(ctx context.Context) []types.ProbeResult {
+	items := p.expandTargets(ctx)
+	if len(items) == 0 {
+		return nil
+	}
+
+	results := make([]types.ProbeResult, len(items))
+	var wg sync.WaitGroup
+	for i, item := range items {
+		wg.Add(1)
+		go func(idx int, wi workItem) {
+			defer wg.Done()
+			results[idx] = p.probeOne(ctx, wi)
+		}(i, item)
+	}
+	wg.Wait()
+	return results
+}
+
+// expandTargets resolves each entry in p.cfg.Targets to one or more workItems.
+// FQDN entries are resolved using ctx's deadline; literal IPs are used as-is.
+// DNS failures produce a StatusError workItem rather than being silently dropped.
+func (p *Prober) expandTargets(ctx context.Context) []workItem {
+	var items []workItem
+	for _, entry := range p.cfg.Targets {
+		if net.ParseIP(entry) != nil {
+			items = append(items, workItem{ip: entry})
+			continue
+		}
+		addrs, err := net.DefaultResolver.LookupHost(ctx, entry)
+		if err != nil || len(addrs) == 0 {
+			// Emit a StatusError result for this FQDN rather than silently skipping.
+			items = append(items, workItem{ip: entry, fqdn: entry})
+			continue
+		}
+		seen := make(map[string]bool, len(addrs))
+		cap := p.cfg.MaxResolvedIPs
+		for _, addr := range addrs {
+			if seen[addr] {
+				continue
+			}
+			seen[addr] = true
+			items = append(items, workItem{ip: addr, fqdn: entry})
+			if cap > 0 && len(seen) >= cap {
+				break
+			}
+		}
+	}
+	return items
+}
+
+// probeOne pings a single IP and returns a populated ProbeResult.
+func (p *Prober) probeOne(ctx context.Context, wi workItem) types.ProbeResult {
 	result := types.ProbeResult{
 		Timestamp: time.Now().UTC(),
 		ProbeName: p.cfg.Name,
-		Target:    p.cfg.Target,
+		Target:    wi.ip,
+		FQDN:      wi.fqdn,
 		SourceIP:  p.cfg.SourceIP,
 		ProbeType: "icmp",
 		Labels:    p.cfg.Labels,
 	}
 
-	pinger, err := probing.NewPinger(p.cfg.Target)
+	// If expandTargets could not resolve the FQDN (ip == fqdn), emit an error result.
+	if wi.fqdn != "" && wi.ip == wi.fqdn {
+		result.Status = types.StatusError
+		result.ErrorType = "resolve_error"
+		result.ErrorMsg = fmt.Sprintf("resolve target %q: lookup failed", wi.fqdn)
+		return result
+	}
+
+	pinger, err := probing.NewPinger(wi.ip)
 	if err != nil {
 		result.Status = types.StatusError
 		result.ErrorType = "init_error"
-		result.ErrorMsg = fmt.Sprintf("resolve target %q: %v", p.cfg.Target, err)
-		// Error is embedded in result.Status/ErrorMsg so the pipeline processes all probes uniformly.
-		return result, nil //nolint:nilerr
+		result.ErrorMsg = fmt.Sprintf("init pinger for %q: %v", wi.ip, err)
+		return result
 	}
 
 	pinger.Count = p.cfg.Count
@@ -55,8 +124,7 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 		result.Status = types.StatusError
 		result.ErrorType = "run_error"
 		result.ErrorMsg = fmt.Sprintf("pinger run: %v", runErr)
-		// Error is embedded in result.Status/ErrorMsg so the pipeline processes all probes uniformly.
-		return result, nil //nolint:nilerr
+		return result
 	}
 
 	stats := pinger.Statistics()
@@ -66,11 +134,11 @@ func (p *Prober) Run(ctx context.Context) (types.ProbeResult, error) {
 		if ctx.Err() == context.DeadlineExceeded {
 			result.ErrorType = "timeout"
 		}
-		return result, nil
+		return result
 	}
 
 	applyStats(&result, stats)
-	return result, nil
+	return result
 }
 
 // applyStats populates result from pinger statistics.

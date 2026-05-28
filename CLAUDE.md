@@ -60,7 +60,7 @@ Two interfaces drive the entire design. Stabilize them before adding implementat
 ```go
 // internal/probe/prober.go
 type Prober interface {
-    Run(ctx context.Context) (types.ProbeResult, error)
+    Run(ctx context.Context) []types.ProbeResult
     Name() string
     Type() string
 }

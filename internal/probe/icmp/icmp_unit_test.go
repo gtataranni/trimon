@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	probing "github.com/prometheus-community/pro-bing"
 	"github.com/gtataranni/trimon/pkg/types"
+
+	probing "github.com/prometheus-community/pro-bing"
 )
 
 func TestStatusDetermination(t *testing.T) {
@@ -57,21 +58,22 @@ func TestRTTZeroWhenNoPacketsReceived(t *testing.T) {
 }
 
 func TestFieldsOnError(t *testing.T) {
-	// Empty addr causes NewPinger to return "addr cannot be empty" without any
-	// network or socket access — exercises our DNS-failure error path.
-	p := New(types.ProbeConfig{Name: "test", Type: "icmp", Target: ""})
-	result, err := p.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run must never return a non-nil error: %v", err)
+	// An unresolvable hostname exercises our resolve_error path without
+	// network or socket access (invalid label → LookupHost fails immediately).
+	p := New(types.ProbeConfig{Name: "test", Type: "icmp", Targets: []string{"invalid..hostname"}})
+	results := p.Run(context.Background())
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	result := results[0]
 	if result.Status != types.StatusError {
 		t.Errorf("Status: got %s, want StatusError", result.Status)
 	}
 	if result.ErrorMsg == "" {
 		t.Error("ErrorMsg must be non-empty on error")
 	}
-	if result.ErrorType != "init_error" {
-		t.Errorf("ErrorType: got %q, want %q", result.ErrorType, "init_error")
+	if result.ErrorType != "resolve_error" {
+		t.Errorf("ErrorType: got %q, want %q", result.ErrorType, "resolve_error")
 	}
 	if result.RTTMinMS != 0 || result.RTTMeanMS != 0 || result.RTTMaxMS != 0 || result.RTTStddevMS != 0 {
 		t.Errorf("RTT fields must be zero on error: min=%f mean=%f max=%f stddev=%f",

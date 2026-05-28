@@ -52,8 +52,10 @@ Goal: introduce target area as a way to group multiple targets.
 An area can be "the internet", or "the web server subnet" or "the private DNS servers in Europe".
 The area is considered reachable based on the probe result of all targets in the area.
 
-- [ ] Extend concept of target into target area, where an area can be defined by multiple ip4/6 addresses. This is very similar to task SEC-10, and can be solved together.
-- [ ] Results are available per IP target but also by target area
+- [x] Extend concept of target into target area: `targets: [str]` list on each probe; the probe name is the implicit area. FQDNs are re-resolved at every tick — each resolved IP emits its own `ProbeResult` with `probe.target=IP` and `probe.fqdn=fqdn`.
+- [x] Results are available per IP target (via `probe.target`) and by area (via `probe.name`); area-level status via `max by (probe_name)(trimon_probe_up)` in dashboards.
+
+**Breaking changes (v0.x):** `target:` YAML key removed (use `targets:`); `ProbeConfig.Target` field removed; `Prober.Run()` now returns `[]ProbeResult`.
 
 ---
 

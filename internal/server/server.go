@@ -185,7 +185,8 @@ type globalDump struct {
 type probeDump struct {
 	Name           string            `json:"name" yaml:"name"`
 	Type           string            `json:"type" yaml:"type"`
-	Target         string            `json:"target" yaml:"target"`
+	Targets        []string          `json:"targets" yaml:"targets"`
+	MaxResolvedIPs int               `json:"max_resolved_ips,omitempty" yaml:"max_resolved_ips,omitempty"`
 	SourceIP       string            `json:"source_ip" yaml:"source_ip"`
 	Interval       string            `json:"probe_every" yaml:"probe_every"`
 	PacketInterval string            `json:"packet_interval" yaml:"packet_interval"`
@@ -204,7 +205,8 @@ func toConfigDump(cfg *config.Config) configDump {
 		probes[i] = probeDump{
 			Name:           p.Name,
 			Type:           p.Type,
-			Target:         p.Target,
+			Targets:        p.Targets,
+			MaxResolvedIPs: p.MaxResolvedIPs,
 			SourceIP:       p.SourceIP,
 			Interval:       p.Interval.String(),
 			PacketInterval: p.PacketInterval.String(),

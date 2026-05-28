@@ -20,6 +20,7 @@ type jsonRecord struct {
 	Probe       string            `json:"probe"`
 	Type        string            `json:"type"`
 	Target      string            `json:"target"`
+	FQDN        string            `json:"fqdn,omitempty"`
 	SourceIP    string            `json:"source_ip"`
 	Status      string            `json:"status"`
 	RTTMeanMS   *float64          `json:"rtt_mean_ms,omitempty"`
@@ -68,6 +69,7 @@ func (e *Exporter) writeJSON(r types.ProbeResult) error {
 		Probe:     r.ProbeName,
 		Type:      r.ProbeType,
 		Target:    r.Target,
+		FQDN:      r.FQDN,
 		SourceIP:  r.SourceIP,
 		Status:    string(r.Status),
 		ErrorMsg:  r.ErrorMsg,
@@ -94,12 +96,17 @@ func (e *Exporter) writeText(r types.ProbeResult) error {
 	if r.ErrorMsg != "" {
 		errPart = fmt.Sprintf(" error=%q", r.ErrorMsg)
 	}
+	fqdnOptional := ""
+	if r.FQDN != "" {
+		fqdnOptional = fmt.Sprintf(" fqdn=%s", r.FQDN)
+	}
 	_, err := fmt.Fprintf(e.w,
-		"%s probe=%s type=%s target=%s src=%s status=%s loss=%.0f%% rtt_mean=%.2fms rtt_min=%.2fms rtt_max=%.2fms%s\n",
+		"%s probe=%s type=%s target=%s%s src=%s status=%s loss=%.0f%% rtt_mean=%.2fms rtt_min=%.2fms rtt_max=%.2fms%s\n",
 		r.Timestamp.UTC().Format(time.RFC3339),
 		r.ProbeName,
 		r.ProbeType,
 		r.Target,
+		fqdnOptional,
 		r.SourceIP,
 		r.Status,
 		r.PacketLossRatio*100,

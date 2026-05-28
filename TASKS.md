@@ -17,7 +17,7 @@ Severity/priority guides sequencing; dependencies are listed where one task bloc
 ## SECURITY
 
 ### SEC-10 · MEDIUM — Probe all resolved IPs per hostname target
-**Status:** TO BE PLANNED  
+**Status:** DONE (v0.3.0)  
 **Files:** `internal/config/config.go` (`resolveTarget`), `internal/probe/icmp/icmp.go`, `pkg/types/types.go`, `internal/scheduler/scheduler.go`  
 **Context:** `resolveTarget()` validates that a hostname resolves but the IP is discarded. At probe time, `probing.NewPinger(target)` re-resolves, meaning probes can be silently redirected if DNS changes. The naive fix (pin the IP at config load) breaks legitimate cases: CDNs, DNS-based load balancers, and any target whose IP rotates intentionally. The correct approach is to **re-resolve on every probe run and probe all currently-returned IPs**, so trimon faithfully measures the actual reachability of the service as DNS presents it — not just one arbitrary IP pinned at startup.
 

@@ -31,7 +31,8 @@ global:
 probes:
   - name: loopback
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     probe_every: 10s
     timeout: 6s
     count: 5
@@ -79,10 +80,12 @@ global:
 probes:
   - name: dup
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
   - name: dup
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
@@ -100,7 +103,8 @@ global:
 probes:
   - name: bad
     type: grpc
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err == nil {
@@ -117,7 +121,8 @@ global:
 probes:
   - name: noip
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
@@ -134,7 +139,8 @@ global:
 probes:
   - name: badip
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     source_ip: "not-an-ip"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
@@ -153,7 +159,8 @@ global:
 probes:
   - name: inherited
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 	cfg, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
 	if err != nil {
@@ -240,7 +247,8 @@ global:
 probes:
   - name: nonlocal
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     source_ip: "10.0.0.1"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
@@ -266,7 +274,8 @@ global:
 probes:
   - name: local
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     source_ip: "127.0.0.1"
 `
 	_, err := parse([]byte(minValidOpsYAML), []byte(probeYAML))
@@ -286,7 +295,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: tooFast
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 500us
 `,
 			wantErr: true,
@@ -296,7 +306,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: minOK
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 1ms
 `,
 			wantErr: false,
@@ -306,7 +317,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: piCountEqTimeout
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 1s
     count: 5
     timeout: 5s
@@ -319,7 +331,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: piCountGtTimeout
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 1s
     count: 5
     timeout: 4s
@@ -332,7 +345,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: piCountLtTimeout
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 1s
     count: 3
     timeout: 5s
@@ -345,7 +359,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: timeoutEqInterval
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 100ms
     count: 3
     timeout: 30s
@@ -358,7 +373,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: timeoutGtInterval
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 100ms
     count: 3
     timeout: 35s
@@ -371,7 +387,8 @@ func TestProbeTimingBounds(t *testing.T) {
 			probeYAML: `
   - name: timeoutLtInterval
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     packet_interval: 100ms
     count: 3
     timeout: 5s
@@ -492,7 +509,8 @@ global:
 probes:
   - name: lbl
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
     labels:
 `
 	cases := []struct {
@@ -676,7 +694,8 @@ global:
 probes:
   - name: lo
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 	opsFile := writeTempFile(t, opsContent)
 	probeFile := writeTempFile(t, probeContent)

@@ -20,10 +20,10 @@ type ProberFactory func(cfg types.ProbeConfig) (probe.Prober, error)
 
 // Scheduler manages one goroutine per probe and fans results into Results.
 type Scheduler struct {
-	factory          ProberFactory
-	results          chan<- types.ProbeResult
-	logger           *slog.Logger
-	onDroppedResult  DroppedResultRecorder
+	factory         ProberFactory
+	results         chan<- types.ProbeResult
+	logger          *slog.Logger
+	onDroppedResult DroppedResultRecorder
 
 	mu      sync.Mutex
 	workers map[string]*worker
@@ -114,17 +114,16 @@ func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 				return
 			case <-ticker.C:
 				runCtx, runCancel := context.WithTimeout(ctx, cfg.Timeout)
-				result, runErr := p.Run(runCtx)
+				results := p.Run(runCtx)
 				runCancel()
-				if runErr != nil {
-					s.logger.Error("probe run error", "name", cfg.Name, "error", runErr)
-				}
-				select {
-				case s.results <- result:
-				default:
-					s.logger.Warn("results channel full, dropping result", "probe", cfg.Name)
-					if s.onDroppedResult != nil {
-						s.onDroppedResult(ctx, cfg.Name)
+				for _, result := range results {
+					select {
+					case s.results <- result:
+					default:
+						s.logger.Warn("results channel full, dropping result", "probe", cfg.Name)
+						if s.onDroppedResult != nil {
+							s.onDroppedResult(ctx, cfg.Name)
+						}
 					}
 				}
 			}
@@ -133,4 +132,3 @@ func (s *Scheduler) startLocked(cfg types.ProbeConfig) {
 
 	s.logger.Info("probe started", "name", cfg.Name, "interval", cfg.Interval)
 }
-

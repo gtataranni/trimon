@@ -684,9 +684,9 @@ func TestBridgeProbeUp(t *testing.T) {
 	exp := newBridgeExporter(t)
 
 	cases := []struct {
-		name    string
-		result  types.ProbeResult
-		wantUp  string
+		name     string
+		result   types.ProbeResult
+		wantUp   string
 		wantDown string
 	}{
 		{

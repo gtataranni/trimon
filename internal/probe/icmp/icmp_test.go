@@ -20,7 +20,7 @@ func newProbe(count int, packetInterval, timeout, interval time.Duration) *Probe
 	return New(types.ProbeConfig{
 		Name:           "test",
 		Type:           "icmp",
-		Target:         unreachableTarget,
+		Targets:        []string{unreachableTarget},
 		Count:          count,
 		PacketInterval: packetInterval,
 		Timeout:        timeout,
@@ -33,10 +33,10 @@ func newProbe(count int, packetInterval, timeout, interval time.Duration) *Probe
 func requireSocket(t *testing.T) {
 	t.Helper()
 	p := newProbe(1, 100*time.Millisecond, 200*time.Millisecond, time.Second)
-	r, _ := p.Run(context.Background())
-	if r.Status == types.StatusError &&
-		(strings.Contains(r.ErrorMsg, "operation not permitted") ||
-			strings.Contains(r.ErrorMsg, "permission denied")) {
+	rs := p.Run(context.Background())
+	if len(rs) > 0 && rs[0].Status == types.StatusError &&
+		(strings.Contains(rs[0].ErrorMsg, "operation not permitted") ||
+			strings.Contains(rs[0].ErrorMsg, "permission denied")) {
 		t.Skip("raw socket unavailable (re-run with sudo or CAP_NET_RAW)")
 	}
 }
@@ -57,12 +57,13 @@ func TestTimeoutFiresBeforeAllPacketsSent(t *testing.T) {
 
 	ctx := context.Background()
 	start := time.Now()
-	result, err := p.Run(ctx)
+	results := p.Run(ctx)
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	result := results[0]
 
 	t.Logf("elapsed=%v packets_sent=%d packets_received=%d loss=%.2f status=%s",
 		elapsed, result.PacketsSent, result.PacketsReceived, result.PacketLossRatio, result.Status)
@@ -103,12 +104,13 @@ func TestTimeoutAfterAllPacketsSent(t *testing.T) {
 
 	ctx := context.Background()
 	start := time.Now()
-	result, err := p.Run(ctx)
+	results := p.Run(ctx)
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	result := results[0]
 
 	t.Logf("elapsed=%v packets_sent=%d packets_received=%d loss=%.2f status=%s",
 		elapsed, result.PacketsSent, result.PacketsReceived, result.PacketLossRatio, result.Status)
@@ -131,16 +133,17 @@ func TestFieldsPopulatedOnSuccess(t *testing.T) {
 	p := New(types.ProbeConfig{
 		Name:           "test",
 		Type:           "icmp",
-		Target:         "127.0.0.1",
+		Targets:        []string{"127.0.0.1"},
 		Count:          3,
 		PacketInterval: 50 * time.Millisecond,
 		Timeout:        2 * time.Second,
 		Interval:       30 * time.Second,
 	})
-	result, err := p.Run(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	results := p.Run(context.Background())
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	result := results[0]
 	if result.Status != types.StatusSuccess {
 		t.Errorf("Status: got %s, want StatusSuccess (error: %s)", result.Status, result.ErrorMsg)
 	}
@@ -197,12 +200,13 @@ func TestContextCancelledBeforeProbeTimeout(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	result, err := p.Run(ctx)
+	results := p.Run(ctx)
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	result := results[0]
 
 	t.Logf("elapsed=%v packets_sent=%d packets_received=%d loss=%.2f status=%s error_msg=%q",
 		elapsed, result.PacketsSent, result.PacketsReceived, result.PacketLossRatio, result.Status, result.ErrorMsg)

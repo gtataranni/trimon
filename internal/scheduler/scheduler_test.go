@@ -12,7 +12,6 @@ import (
 	"github.com/gtataranni/trimon/pkg/types"
 )
 
-
 // countProbe counts how many times Run is called.
 type countProbe struct {
 	name  string
@@ -22,12 +21,12 @@ type countProbe struct {
 
 func (p *countProbe) Name() string { return p.name }
 func (p *countProbe) Type() string { return "test" }
-func (p *countProbe) Run(_ context.Context) (types.ProbeResult, error) {
+func (p *countProbe) Run(_ context.Context) []types.ProbeResult {
 	p.runs.Add(1)
 	if p.delay > 0 {
 		time.Sleep(p.delay)
 	}
-	return types.ProbeResult{ProbeName: p.name, Status: types.StatusSuccess}, nil
+	return []types.ProbeResult{{ProbeName: p.name, Status: types.StatusSuccess}}
 }
 
 func testFactory(probes map[string]*countProbe) ProberFactory {
@@ -50,7 +49,7 @@ func TestSchedulerStartStop(t *testing.T) {
 	cfg := types.ProbeConfig{
 		Name:     "p1",
 		Type:     "test",
-		Target:   "127.0.0.1",
+		Targets:  []string{"127.0.0.1"},
 		SourceIP: "127.0.0.1",
 		Interval: 50 * time.Millisecond,
 		Timeout:  time.Second,
@@ -116,7 +115,7 @@ func TestDroppedResultRecorder(t *testing.T) {
 	cfg := types.ProbeConfig{
 		Name:     "drop-probe",
 		Type:     "test",
-		Target:   "127.0.0.1",
+		Targets:  []string{"127.0.0.1"},
 		SourceIP: "127.0.0.1",
 		Interval: 20 * time.Millisecond,
 		Timeout:  time.Second,

@@ -178,7 +178,7 @@ func TestConfigEndpointShape(t *testing.T) {
 			Timeout:        5 * 1e9,
 			Count:          3,
 		},
-		Probes: []types.ProbeConfig{{Name: "lo", Type: "icmp", Target: "127.0.0.1"}},
+		Probes: []types.ProbeConfig{{Name: "lo", Type: "icmp", Targets: []string{"127.0.0.1"}}},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/config", nil)
