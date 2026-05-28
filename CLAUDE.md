@@ -55,24 +55,7 @@ Exporter goroutine ──▶ stdout / OTLP (OTel SDK)
 
 ### Load-bearing abstractions
 
-Two interfaces drive the entire design. Stabilize them before adding implementations.
-
-```go
-// internal/probe/prober.go
-type Prober interface {
-    Run(ctx context.Context) []types.ProbeResult
-    Name() string
-    Type() string
-}
-
-// internal/exporter/exporter.go
-type Exporter interface {
-    Export(ctx context.Context, result types.ProbeResult) error
-    Close() error
-}
-```
-
-If a change requires modifying these, stop and flag it before proceeding.
+Two interfaces drive the entire design — `internal/probe/prober.go` (`Prober`) and `internal/exporter/exporter.go` (`Exporter`). Stabilize them before adding implementations. If a change requires modifying these, stop and flag it before proceeding.
 
 ## Project layout
 
@@ -145,46 +128,40 @@ A `ProbeResult.status` is one of:
 
 `failure` and `error` are **different**. `failure` means the probe ran correctly and the target didn't respond. `error` means trimon itself couldn't run the probe. Do not collapse them.
 
+## Multi-target / DNS resolution behavior (since v0.3.0)
+
+Each probe config accepts `targets: [...]` (a list of IPs or FQDNs). On every scheduler tick, hostnames are **re-resolved** — each returned IP becomes its own `ProbeResult`. Key design decisions:
+
+- `probe.target` = resolved IP address (never the hostname)
+- `probe.fqdn` = original hostname (present only when the target was a hostname; absent for bare IPs)
+- Area-level reachability: `max by (probe_name)(trimon_probe_up)` across all IPs in the probe
+- The old `target:` (singular) YAML key is removed; use `targets:`
+
 ## Metrics on `/metrics` (Prometheus text)
 
 All instruments are defined once in `internal/exporter/otlp/otlp.go` via the OTel SDK.
 The Prometheus bridge converts them to Prometheus text format at scrape time. The same
 instruments also push to an OTel Collector when `exporters.otlp.enabled: true`.
-Full design rationale: **[docs/metrics.md](docs/metrics.md)**
+Full metric spec (names, attributes, types): **[docs/metrics.md](docs/metrics.md)**
 
-Probe attributes: `probe.name`, `probe.type`, `probe.target`, `probe.source_ip`, plus
-any user-defined labels from the probe config. `probe.status` is **never** an attribute
-(see docs/metrics.md for why).
-
-**Probe result metrics** — the actual measurements trimon produces:
-- `trimon_probe_rtt_min_milliseconds{...}` — gauge
-- `trimon_probe_rtt_mean_milliseconds{...}` — gauge
-- `trimon_probe_rtt_max_milliseconds{...}` — gauge
-- `trimon_probe_rtt_stddev_milliseconds{...}` — gauge
-- `trimon_probe_packet_loss_ratio{...}` — gauge, 0.0–1.0, NaN on status=error
-- `trimon_probe_packets_sent_total{...}` — counter (not incremented on error)
-- `trimon_probe_packets_received_total{...}` — counter (not incremented on error)
-- `trimon_probe_success{...}` — gauge, 1 only if all packets replied (status=success)
-- `trimon_probe_up{...}` — gauge, 1 if ≥1 reply received (status=success or partial)
-
-**Operational self-observability** — about trimon itself:
-- `trimon_build_info{version, commit, goversion}` — gauge, value 1
-- `trimon_probe_runs_total{probe.name}` — counter
-- `trimon_probe_errors_total{probe.name, error.type}` — counter
-- `trimon_probe_results_dropped_total{probe.name}` — counter, incremented when the pipeline buffer is full and a result is dropped
-- `trimon_scheduler_goroutines` — gauge
-- `trimon_config_reloads_total` — counter
+Key invariants agents frequently get wrong:
+- `probe.status` is **never** an attribute — see docs/metrics.md for the rationale.
+- RTT gauges and `trimon_probe_packet_loss_ratio` emit **NaN** on `status=error`.
+- Counters (`packets_sent`, `packets_received`) are **not incremented** on `status=error`.
 
 ---
 
 ## Project phases & roadmap
 
+**Current phase: Phase 4 — v0.4.0 (additional protocols).** Phases 1–3 are complete.
+
 See [ROADMAP.md](ROADMAP.md) for the full phase plan, per-phase checklists, and out-of-scope items.
+See [TASKS.md](TASKS.md) for the active task backlog — check it before starting any implementation work.
 
 Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR.
 
 ## When in doubt
 
 1. Re-read the relevant interface in `internal/probe/prober.go` or `internal/exporter/exporter.go`.
-2. Check the current phase's checklist in [ROADMAP.md](ROADMAP.md) — if the task isn't on it, it's probably out of scope for this iteration.
-3. Prefer adding a comment that states an assumption over asking; flag the assumption in the PR description and in the summary at the end of agent cycles.
+2. Check [TASKS.md](TASKS.md) for the active backlog; check [ROADMAP.md](ROADMAP.md) for phase scope — if the task isn't in the current phase, it's probably out of scope.
+3. Research pros/cons, best practices and solutions from other popular project for an informed decision, then ask the user.
