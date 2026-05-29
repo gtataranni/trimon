@@ -7,6 +7,7 @@ type Status string
 
 const (
 	ProbeTypeICMP = "icmp"
+	ProbeTypeTCP  = "tcp"
 	ProbeTypeHTTP = "http"
 
 	StatusSuccess Status = "success" // 0% packet loss
@@ -30,6 +31,23 @@ type HTTPConfig struct {
 	TLSExpiryWarningDays int // if > 0: StatusPartial when cert expires within N days
 }
 
+// TCP probe modes.
+const (
+	// TCPModeConnect completes a full TCP handshake (kernel connect), then
+	// closes it. No special privileges required. Measures handshake latency.
+	TCPModeConnect = "connect"
+	// TCPModeSYN sends a raw half-open SYN and classifies the reply without
+	// completing the handshake. Requires raw sockets (CAP_NET_RAW) and Linux.
+	// Measures network round-trip and port reachability.
+	TCPModeSYN = "syn"
+)
+
+// TCPConfig holds TCP probe parameters.
+type TCPConfig struct {
+	Port int    // required; 1–65535
+	Mode string // "connect" (default) or "syn"
+}
+
 // ProbeConfig is the merged, validated probe configuration built by internal/config.
 type ProbeConfig struct {
 	Name           string
@@ -43,6 +61,7 @@ type ProbeConfig struct {
 	Count          int
 	Labels         map[string]string
 	HTTP           *HTTPConfig
+	TCP            *TCPConfig
 }
 
 // ProbeResult is the output of a single probe run against one IP target.
@@ -64,10 +83,16 @@ type ProbeResult struct {
 	RTTStddevMS float64 `json:"rtt_stddev_ms"`
 	// DurationMS is the wall-clock time from request start to body drain.
 	// Set by single-request probes (e.g. HTTP); zero for multi-packet probes.
-	DurationMS      float64           `json:"duration_ms,omitempty"`
-	PacketLossRatio float64           `json:"packet_loss"`
-	Status          Status            `json:"status"`
-	ErrorMsg        string            `json:"error_msg,omitempty"`
-	ErrorType       string            `json:"error_type,omitempty"`
-	Labels          map[string]string `json:"labels"`
+	DurationMS      float64 `json:"duration_ms,omitempty"`
+	PacketLossRatio float64 `json:"packet_loss"`
+	// PortOpen is the TCP port reachability state, set only by TCP probes.
+	// nil   = not applicable (non-TCP probe, or probe could not run / status=error)
+	// true  = port open  (SYN/ACK received)
+	// false = port not open (RST/closed, or no reply at all)
+	// Combine with probe.up to distinguish closed (up=1) from filtered/down (up=0).
+	PortOpen  *bool             `json:"port_open,omitempty"`
+	Status    Status            `json:"status"`
+	ErrorMsg  string            `json:"error_msg,omitempty"`
+	ErrorType string            `json:"error_type,omitempty"`
+	Labels    map[string]string `json:"labels"`
 }

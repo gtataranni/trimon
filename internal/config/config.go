@@ -94,6 +94,12 @@ type rawHTTPConfig struct {
 	TLSExpiryWarningDays int    `yaml:"tls_expiry_warning_days"`
 }
 
+// rawTCPConfig is the YAML shape for TCP probe parameters.
+type rawTCPConfig struct {
+	Port int    `yaml:"port"`
+	Mode string `yaml:"mode"`
+}
+
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
@@ -107,6 +113,7 @@ type rawProbeConfig struct {
 	Count          *int              `yaml:"count"`
 	Labels         map[string]string `yaml:"labels"`
 	HTTP           *rawHTTPConfig    `yaml:"http"`
+	TCP            *rawTCPConfig     `yaml:"tcp"`
 }
 
 // Duration is a yaml-decodable wrapper around time.Duration.
@@ -147,7 +154,7 @@ type Config struct {
 }
 
 var knownProbeTypes = map[string]bool{
-	"icmp": true, "http": true,
+	types.ProbeTypeICMP: true, types.ProbeTypeHTTP: true, types.ProbeTypeTCP: true,
 }
 
 // localInterfaceAddrs returns the list of unicast addresses assigned to local interfaces.
@@ -379,19 +386,32 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			count = *r.Count
 		}
 
-		if r.Type != "http" {
+		if r.Type != types.ProbeTypeHTTP {
+			// HTTP does not support count > 1. For the rest we validate timings
 			if err := validateTimings(interval, packetInterval, timeout, count); err != nil {
 				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
 			}
 		}
 
 		var httpCfg *types.HTTPConfig
-		if r.Type == "http" {
+		if r.Type == types.ProbeTypeHTTP {
 			if r.HTTP == nil {
 				return nil, fmt.Errorf("probe %q: http config block is required for type \"http\"", r.Name)
 			}
 			var err error
 			httpCfg, err = validateHTTPConfig(r.HTTP)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+		}
+
+		var tcpCfg *types.TCPConfig
+		if r.Type == types.ProbeTypeTCP {
+			if r.TCP == nil {
+				return nil, fmt.Errorf("probe %q: tcp config block is required for type \"tcp\"", r.Name)
+			}
+			var err error
+			tcpCfg, err = validateTCPConfig(r.TCP)
 			if err != nil {
 				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
 			}
@@ -419,6 +439,7 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			Count:          count,
 			Labels:         labels,
 			HTTP:           httpCfg,
+			TCP:            tcpCfg,
 		})
 	}
 	return out, nil
@@ -490,6 +511,21 @@ func validateHTTPConfig(r *rawHTTPConfig) (*types.HTTPConfig, error) {
 	}
 	cfg.TLSExpiryWarningDays = r.TLSExpiryWarningDays
 	return cfg, nil
+}
+
+// validateTCPConfig validates a rawTCPConfig, returning the typed config on success.
+func validateTCPConfig(r *rawTCPConfig) (*types.TCPConfig, error) {
+	if r.Port < 1 || r.Port > 65535 {
+		return nil, fmt.Errorf("tcp.port must be in [1, 65535], got %d", r.Port)
+	}
+	mode := r.Mode
+	if mode == "" {
+		mode = types.TCPModeConnect
+	}
+	if mode != types.TCPModeConnect && mode != types.TCPModeSYN {
+		return nil, fmt.Errorf("tcp.mode must be %q or %q, got %q", types.TCPModeConnect, types.TCPModeSYN, r.Mode)
+	}
+	return &types.TCPConfig{Port: r.Port, Mode: mode}, nil
 }
 
 // validateOneTarget checks that entry is either a valid IP or a resolvable hostname.

@@ -36,6 +36,7 @@ Recorded on every `Export()` call. Attributes: `probe.name`, `probe.type`,
 | `trimon.probe.rtt.stddev` | Float64Gauge | `ms` | `trimon_probe_rtt_stddev_milliseconds` | ICMP only; NaN on failure/error and for HTTP probes |
 | `trimon.probe.duration` | Float64Gauge | `ms` | `trimon_probe_duration_milliseconds` | HTTP only; wall-clock from request start to body drain; NaN when no response received or for non-HTTP probes |
 | `trimon.probe.packet_loss` | Float64Gauge | `ratio` | `trimon_probe_packet_loss_ratio` | 1.0 on failure, NaN on error |
+| `trimon.probe.tcp.port_open` | Float64Gauge | — | `trimon_probe_tcp_port_open` | TCP only; 1 open (SYN/ACK), 0 closed/no-reply, NaN for non-TCP probes or error |
 | `trimon.probe.packets_sent` | Int64Counter | `{packets}` | `trimon_probe_packets_sent_total` | not incremented on error |
 | `trimon.probe.packets_received` | Int64Counter | `{packets}` | `trimon_probe_packets_received_total` | not incremented on error |
 | `trimon.probe.success` | Int64Gauge | — | `trimon_probe_success` | 1 only if status=success (all packets replied) |
@@ -110,6 +111,39 @@ the last completed probe run.
 NaN makes the undefined state explicit. `1.0` on error would collapse "target
 unreachable" and "trimon internal failure" into the same value. Prometheus, VictoriaMetrics,
 and Grafana Mimir handle NaN natively.
+
+---
+
+## `probe.tcp.port_open` semantics (TCP probes)
+
+A Float64Gauge encoding TCP port reachability for both TCP modes (`connect` and `syn`):
+
+- `1` — port **open**: SYN/ACK received (or, in connect mode, handshake completed)
+- `0` — port **not open**: a RST (closed) or no reply at all
+- **`NaN`** — non-TCP probe, or the probe could not run (status = error)
+
+The three operationally distinct states are recovered by **combining it with
+`probe.up`** — deliberately, rather than encoding a 3-valued enum as an attribute. Per
+[`probe.status` is not an attribute](#probestatus-is-not-an-attribute), trimon keeps
+state in gauge *values*, not in mutable labels; this metric extends the existing
+`probe.up`/`probe.success` binary-gauge idiom rather than introducing a `state=` label.
+
+| `probe.up` | `tcp.port_open` | meaning |
+|---|---|---|
+| 1 | 1 | **OPEN** — SYN/ACK |
+| 1 | 0 | **CLOSED** — RST (host reachable, port shut) |
+| 0 | 0 | **FILTERED / DROPPED / DOWN** — no reply |
+| 0 | 1 | impossible |
+
+**A RST is reachability, not loss.** Because trimon's TCP probe measures network
+reachability (not service availability), a RST counts as a received reply: the host
+answered, so `probe.up = 1`, `packet_loss = 0`, and status is `success`. `tcp.port_open = 0`
+is what distinguishes a reachable closed port from an open one. Only silence (timeout)
+is packet loss. This applies to **both** modes — in connect mode an `ECONNREFUSED` is
+treated identically to a SYN-mode RST.
+
+PromQL: open = `trimon_probe_tcp_port_open == 1`; closed = `trimon_probe_up == 1 and
+trimon_probe_tcp_port_open == 0`; unreachable = `trimon_probe_up == 0`.
 
 ---
 

@@ -23,6 +23,7 @@ import (
 	"github.com/gtataranni/trimon/internal/probe"
 	httpprobe "github.com/gtataranni/trimon/internal/probe/http"
 	icmpprobe "github.com/gtataranni/trimon/internal/probe/icmp"
+	tcpprobe "github.com/gtataranni/trimon/internal/probe/tcp"
 	"github.com/gtataranni/trimon/internal/scheduler"
 	"github.com/gtataranni/trimon/internal/server"
 	"github.com/gtataranni/trimon/pkg/types"
@@ -64,9 +65,11 @@ func main() {
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {
 		switch probeCfg.Type {
-		case "icmp":
+		case types.ProbeTypeICMP:
 			return icmpprobe.New(probeCfg), nil
-		case "http":
+		case types.ProbeTypeTCP:
+			return tcpprobe.New(probeCfg), nil
+		case types.ProbeTypeHTTP:
 			return httpprobe.New(probeCfg), nil
 		default:
 			return nil, fmt.Errorf("unknown probe type %q", probeCfg.Type)

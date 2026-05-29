@@ -161,20 +161,18 @@ func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeRes
 	}
 
 	// TLS expiry check (HTTPS only, on a status-matching response).
+	// Cert expiry is reflected in the result status only — it is deliberately
+	// not emitted as a label.
 	if hcfg.Scheme == "https" && result.PacketsReceived == 1 &&
 		resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
-		daysLeft := int(time.Until(resp.TLS.PeerCertificates[0].NotAfter).Hours() / 24)
-		labels := make(map[string]string, len(cfg.Labels)+1)
-		for k, v := range cfg.Labels {
-			labels[k] = v
-		}
-		labels["probe.tls_expiry_days"] = strconv.Itoa(daysLeft)
-		result.Labels = labels
-
-		if time.Until(resp.TLS.PeerCertificates[0].NotAfter) < 0 {
+		notAfter := resp.TLS.PeerCertificates[0].NotAfter
+		if time.Until(notAfter) < 0 {
 			result.Status = types.StatusFailure
-		} else if hcfg.TLSExpiryWarningDays > 0 && daysLeft <= hcfg.TLSExpiryWarningDays {
-			result.Status = types.StatusPartial
+		} else if hcfg.TLSExpiryWarningDays > 0 {
+			daysLeft := int(time.Until(notAfter).Hours() / 24)
+			if daysLeft <= hcfg.TLSExpiryWarningDays {
+				result.Status = types.StatusPartial
+			}
 		}
 	}
 

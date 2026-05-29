@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/gtataranni/trimon/pkg/types"
 )
 
 // minValidProbeYAML is the smallest probe config that passes all validators.
@@ -973,6 +975,131 @@ probes:
     http:
       scheme: https
       tls_expiry_warning_days: -1
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parse([]byte(minValidOpsYAML), []byte(baseGlobal+tc.snippet))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.check != nil {
+				tc.check(t, cfg)
+			}
+		})
+	}
+}
+
+func TestTCPProbeConfig(t *testing.T) {
+	baseGlobal := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+		check   func(*testing.T, *Config)
+	}{
+		{
+			name: "valid tcp probe is accepted",
+			snippet: `
+  - name: ssh
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp:
+      port: 22
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].TCP == nil {
+					t.Fatal("TCP config is nil")
+				}
+				if cfg.Probes[0].TCP.Port != 22 {
+					t.Errorf("port: want 22, got %d", cfg.Probes[0].TCP.Port)
+				}
+				if cfg.Probes[0].TCP.Mode != types.TCPModeConnect {
+					t.Errorf("mode: want default %q, got %q", types.TCPModeConnect, cfg.Probes[0].TCP.Mode)
+				}
+			},
+		},
+		{
+			name: "syn mode is accepted",
+			snippet: `
+  - name: syn-probe
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp:
+      port: 443
+      mode: syn
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].TCP.Mode != types.TCPModeSYN {
+					t.Errorf("mode: want %q, got %q", types.TCPModeSYN, cfg.Probes[0].TCP.Mode)
+				}
+			},
+		},
+		{
+			name: "invalid mode is rejected",
+			snippet: `
+  - name: bad-mode
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp:
+      port: 443
+      mode: half-open
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing tcp block is rejected",
+			snippet: `
+  - name: no-tcp-block
+    type: tcp
+    targets: ["127.0.0.1"]
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing port is rejected",
+			snippet: `
+  - name: no-port
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp: {}
+`,
+			wantErr: true,
+		},
+		{
+			name: "port 0 is rejected",
+			snippet: `
+  - name: zero-port
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp:
+      port: 0
+`,
+			wantErr: true,
+		},
+		{
+			name: "port out of range is rejected",
+			snippet: `
+  - name: big-port
+    type: tcp
+    targets: ["127.0.0.1"]
+    tcp:
+      port: 70000
 `,
 			wantErr: true,
 		},
