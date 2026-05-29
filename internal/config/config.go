@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -80,6 +82,18 @@ type PipelineConfig struct {
 	BufferSize int `yaml:"buffer_size"` // default 1000
 }
 
+// rawHTTPConfig is the YAML shape for HTTP/HTTPS probe parameters.
+// FollowRedirects is *bool to distinguish false from omitted (default true).
+type rawHTTPConfig struct {
+	Scheme               string `yaml:"scheme"`
+	Port                 int    `yaml:"port"`
+	Path                 string `yaml:"path"`
+	Method               string `yaml:"method"`
+	ExpectedStatus       int    `yaml:"expected_status"`
+	FollowRedirects      *bool  `yaml:"follow_redirects"`
+	TLSExpiryWarningDays int    `yaml:"tls_expiry_warning_days"`
+}
+
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
@@ -92,6 +106,7 @@ type rawProbeConfig struct {
 	Timeout        *Duration         `yaml:"timeout"`
 	Count          *int              `yaml:"count"`
 	Labels         map[string]string `yaml:"labels"`
+	HTTP           *rawHTTPConfig    `yaml:"http"`
 }
 
 // Duration is a yaml-decodable wrapper around time.Duration.
@@ -132,7 +147,7 @@ type Config struct {
 }
 
 var knownProbeTypes = map[string]bool{
-	"icmp": true,
+	"icmp": true, "http": true,
 }
 
 // localInterfaceAddrs returns the list of unicast addresses assigned to local interfaces.
@@ -314,7 +329,7 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			return nil, fmt.Errorf("probe %q: type is required", r.Name)
 		}
 		if !knownProbeTypes[r.Type] {
-			return nil, fmt.Errorf("probe %q: unknown type %q (supported: icmp)", r.Name, r.Type)
+			return nil, fmt.Errorf("probe %q: unknown type %q (supported: %s)", r.Name, r.Type, strings.Join(slices.Sorted(maps.Keys(knownProbeTypes)), ", "))
 		}
 
 		if len(r.Targets) == 0 {
@@ -364,8 +379,22 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			count = *r.Count
 		}
 
-		if err := validateTimings(interval, packetInterval, timeout, count); err != nil {
-			return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+		if r.Type != "http" {
+			if err := validateTimings(interval, packetInterval, timeout, count); err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+		}
+
+		var httpCfg *types.HTTPConfig
+		if r.Type == "http" {
+			if r.HTTP == nil {
+				return nil, fmt.Errorf("probe %q: http config block is required for type \"http\"", r.Name)
+			}
+			var err error
+			httpCfg, err = validateHTTPConfig(r.HTTP)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
 		}
 
 		labels := r.Labels
@@ -389,6 +418,7 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			Timeout:        timeout,
 			Count:          count,
 			Labels:         labels,
+			HTTP:           httpCfg,
 		})
 	}
 	return out, nil
@@ -411,6 +441,55 @@ func validateOTLP(o OTLPExporterConfig) error {
 		return errors.New("exporters.otlp.shutdown_timeout must be positive")
 	}
 	return nil
+}
+
+// validateHTTPConfig validates and applies defaults to a rawHTTPConfig, returning the
+// typed config on success.
+func validateHTTPConfig(r *rawHTTPConfig) (*types.HTTPConfig, error) {
+	cfg := &types.HTTPConfig{
+		Scheme:          "http",
+		Path:            "/",
+		Method:          "GET",
+		FollowRedirects: true,
+	}
+
+	if r.Scheme != "" {
+		s := strings.ToLower(r.Scheme)
+		if s != "http" && s != "https" {
+			return nil, fmt.Errorf("http.scheme must be \"http\" or \"https\", got %q", r.Scheme)
+		}
+		cfg.Scheme = s
+	}
+	if r.Port != 0 {
+		if r.Port < 1 || r.Port > 65535 {
+			return nil, fmt.Errorf("http.port must be in [1, 65535], got %d", r.Port)
+		}
+		cfg.Port = r.Port
+	}
+	if r.Path != "" {
+		cfg.Path = r.Path
+	}
+	if r.Method != "" {
+		m := strings.ToUpper(r.Method)
+		if m != "GET" && m != "HEAD" && m != "POST" {
+			return nil, fmt.Errorf("http.method must be GET, HEAD, or POST, got %q", r.Method)
+		}
+		cfg.Method = m
+	}
+	if r.ExpectedStatus != 0 {
+		if r.ExpectedStatus < 100 || r.ExpectedStatus > 599 {
+			return nil, fmt.Errorf("http.expected_status must be in [100, 599] or 0 (any 2xx), got %d", r.ExpectedStatus)
+		}
+		cfg.ExpectedStatus = r.ExpectedStatus
+	}
+	if r.FollowRedirects != nil {
+		cfg.FollowRedirects = *r.FollowRedirects
+	}
+	if r.TLSExpiryWarningDays < 0 {
+		return nil, fmt.Errorf("http.tls_expiry_warning_days must be >= 0, got %d", r.TLSExpiryWarningDays)
+	}
+	cfg.TLSExpiryWarningDays = r.TLSExpiryWarningDays
+	return cfg, nil
 }
 
 // validateOneTarget checks that entry is either a valid IP or a resolvable hostname.

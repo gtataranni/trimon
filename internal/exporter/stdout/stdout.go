@@ -12,9 +12,8 @@ import (
 )
 
 // jsonRecord is the NDJSON shape for JSON mode.
-// RTT and PacketLoss fields are *float64 so omitempty can distinguish "not measured"
-// from a legitimate zero. This struct is write-only (only ever passed to Encode),
-// so nil-checks are confined to tests.
+// Pointer fields use omitempty to distinguish "not measured" from a legitimate zero.
+// This struct is write-only (only ever passed to Encode), so nil-checks are confined to tests.
 type jsonRecord struct {
 	TS          string            `json:"ts"`
 	Probe       string            `json:"probe"`
@@ -23,7 +22,8 @@ type jsonRecord struct {
 	FQDN        string            `json:"fqdn,omitempty"`
 	SourceIP    string            `json:"source_ip"`
 	Status      string            `json:"status"`
-	RTTMeanMS   *float64          `json:"rtt_mean_ms,omitempty"`
+	DurationMS  *float64          `json:"duration_ms,omitempty"` // HTTP probes
+	RTTMeanMS   *float64          `json:"rtt_mean_ms,omitempty"` // multi-packet probes
 	RTTMinMS    *float64          `json:"rtt_min_ms,omitempty"`
 	RTTMaxMS    *float64          `json:"rtt_max_ms,omitempty"`
 	RTTStddevMS *float64          `json:"rtt_stddev_ms,omitempty"`
@@ -76,14 +76,18 @@ func (e *Exporter) writeJSON(r types.ProbeResult) error {
 		ErrorType: r.ErrorType,
 		Labels:    r.Labels,
 	}
-	if r.PacketsReceived > 0 {
+	if r.Status != types.StatusError {
+		rec.PacketLoss = &r.PacketLossRatio
+	}
+	if r.ProbeType == types.ProbeTypeHTTP {
+		if r.DurationMS > 0 {
+			rec.DurationMS = &r.DurationMS
+		}
+	} else if r.PacketsReceived > 0 {
 		rec.RTTMeanMS = &r.RTTMeanMS
 		rec.RTTMinMS = &r.RTTMinMS
 		rec.RTTMaxMS = &r.RTTMaxMS
 		rec.RTTStddevMS = &r.RTTStddevMS
-	}
-	if r.Status != types.StatusError {
-		rec.PacketLoss = &r.PacketLossRatio
 	}
 	if rec.Labels == nil {
 		rec.Labels = map[string]string{}
@@ -96,20 +100,40 @@ func (e *Exporter) writeText(r types.ProbeResult) error {
 	if r.ErrorMsg != "" {
 		errPart = fmt.Sprintf(" error=%q", r.ErrorMsg)
 	}
-	fqdnOptional := ""
+	fqdnText := ""
 	if r.FQDN != "" {
-		fqdnOptional = fmt.Sprintf(" fqdn=%s", r.FQDN)
+		fqdnText = fmt.Sprintf(" fqdn=%s", r.FQDN)
+	}
+	lossText := ""
+	if r.Status != types.StatusError {
+		lossText = fmt.Sprintf(" loss=%.0f%%", r.PacketLossRatio*100)
+	}
+	if r.ProbeType == types.ProbeTypeHTTP {
+		_, err := fmt.Fprintf(e.w,
+			"%s probe=%s type=%s target=%s%s src=%s status=%s%s duration=%.2fms%s\n",
+			r.Timestamp.UTC().Format(time.RFC3339),
+			r.ProbeName,
+			r.ProbeType,
+			r.Target,
+			fqdnText,
+			r.SourceIP,
+			r.Status,
+			lossText,
+			r.DurationMS,
+			errPart,
+		)
+		return err
 	}
 	_, err := fmt.Fprintf(e.w,
-		"%s probe=%s type=%s target=%s%s src=%s status=%s loss=%.0f%% rtt_mean=%.2fms rtt_min=%.2fms rtt_max=%.2fms%s\n",
+		"%s probe=%s type=%s target=%s%s src=%s status=%s%s rtt_mean=%.2fms rtt_min=%.2fms rtt_max=%.2fms%s\n",
 		r.Timestamp.UTC().Format(time.RFC3339),
 		r.ProbeName,
 		r.ProbeType,
 		r.Target,
-		fqdnOptional,
+		fqdnText,
 		r.SourceIP,
 		r.Status,
-		r.PacketLossRatio*100,
+		lossText,
 		r.RTTMeanMS,
 		r.RTTMinMS,
 		r.RTTMaxMS,

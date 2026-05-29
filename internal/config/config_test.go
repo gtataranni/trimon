@@ -769,6 +769,234 @@ probes: []
 	}
 }
 
+func TestHTTPProbeConfig(t *testing.T) {
+	baseGlobal := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 1
+probes:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+		check   func(*testing.T, *Config)
+	}{
+		{
+			name: "minimal http probe is valid",
+			snippet: `
+  - name: min-http
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+`,
+			check: func(t *testing.T, cfg *Config) {
+				h := cfg.Probes[0].HTTP
+				if h.Scheme != "http" {
+					t.Errorf("scheme: want http, got %q", h.Scheme)
+				}
+				if h.Path != "/" {
+					t.Errorf("path: want /, got %q", h.Path)
+				}
+				if h.Method != "GET" {
+					t.Errorf("method: want GET, got %q", h.Method)
+				}
+				if !h.FollowRedirects {
+					t.Error("follow_redirects: want true (default)")
+				}
+			},
+		},
+		{
+			name: "https scheme is valid",
+			snippet: `
+  - name: tls
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: https
+`,
+		},
+		{
+			name: "scheme is case-normalised",
+			snippet: `
+  - name: upper
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: HTTPS
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].HTTP.Scheme != "https" {
+					t.Errorf("want normalised scheme https, got %q", cfg.Probes[0].HTTP.Scheme)
+				}
+			},
+		},
+		{
+			name: "method is case-normalised",
+			snippet: `
+  - name: head
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      method: head
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].HTTP.Method != "HEAD" {
+					t.Errorf("want HEAD, got %q", cfg.Probes[0].HTTP.Method)
+				}
+			},
+		},
+		{
+			name: "valid expected_status is stored",
+			snippet: `
+  - name: status
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      expected_status: 201
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].HTTP.ExpectedStatus != 201 {
+					t.Errorf("want 201, got %d", cfg.Probes[0].HTTP.ExpectedStatus)
+				}
+			},
+		},
+		{
+			name: "expected_status 0 means any 2xx",
+			snippet: `
+  - name: any2xx
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].HTTP.ExpectedStatus != 0 {
+					t.Errorf("want 0 (any 2xx), got %d", cfg.Probes[0].HTTP.ExpectedStatus)
+				}
+			},
+		},
+		{
+			name: "follow_redirects false is honoured",
+			snippet: `
+  - name: noredir
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      follow_redirects: false
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].HTTP.FollowRedirects {
+					t.Error("want follow_redirects=false")
+				}
+			},
+		},
+		{
+			name: "invalid scheme is rejected",
+			snippet: `
+  - name: bad-scheme
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: ftp
+`,
+			wantErr: true,
+		},
+		{
+			name: "invalid method is rejected",
+			snippet: `
+  - name: bad-method
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      method: DELETE
+`,
+			wantErr: true,
+		},
+		{
+			name: "expected_status 99 is rejected",
+			snippet: `
+  - name: bad-status-low
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      expected_status: 99
+`,
+			wantErr: true,
+		},
+		{
+			name: "expected_status 600 is rejected",
+			snippet: `
+  - name: bad-status-high
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      expected_status: 600
+`,
+			wantErr: true,
+		},
+		{
+			name: "port out of range is rejected",
+			snippet: `
+  - name: bad-port
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: http
+      port: 99999
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing http block for type http is rejected",
+			snippet: `
+  - name: no-http-block
+    type: http
+    targets: ["127.0.0.1"]
+`,
+			wantErr: true,
+		},
+		{
+			name: "negative tls_expiry_warning_days is rejected",
+			snippet: `
+  - name: neg-expiry
+    type: http
+    targets: ["127.0.0.1"]
+    http:
+      scheme: https
+      tls_expiry_warning_days: -1
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parse([]byte(minValidOpsYAML), []byte(baseGlobal+tc.snippet))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.check != nil {
+				tc.check(t, cfg)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "*.yaml")

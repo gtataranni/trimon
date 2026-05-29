@@ -30,10 +30,11 @@ Recorded on every `Export()` call. Attributes: `probe.name`, `probe.type`,
 
 | OTel name | Type | Unit | Prometheus name | Notes |
 |-----------|------|------|-----------------|-------|
-| `trimon.probe.rtt.min` | Float64Gauge | `ms` | `trimon_probe_rtt_min_milliseconds` | NaN on failure/error |
-| `trimon.probe.rtt.mean` | Float64Gauge | `ms` | `trimon_probe_rtt_mean_milliseconds` | NaN on failure/error |
-| `trimon.probe.rtt.max` | Float64Gauge | `ms` | `trimon_probe_rtt_max_milliseconds` | NaN on failure/error |
-| `trimon.probe.rtt.stddev` | Float64Gauge | `ms` | `trimon_probe_rtt_stddev_milliseconds` | NaN on failure/error |
+| `trimon.probe.rtt.min` | Float64Gauge | `ms` | `trimon_probe_rtt_min_milliseconds` | ICMP only; NaN on failure/error and for HTTP probes |
+| `trimon.probe.rtt.mean` | Float64Gauge | `ms` | `trimon_probe_rtt_mean_milliseconds` | ICMP only; NaN on failure/error and for HTTP probes |
+| `trimon.probe.rtt.max` | Float64Gauge | `ms` | `trimon_probe_rtt_max_milliseconds` | ICMP only; NaN on failure/error and for HTTP probes |
+| `trimon.probe.rtt.stddev` | Float64Gauge | `ms` | `trimon_probe_rtt_stddev_milliseconds` | ICMP only; NaN on failure/error and for HTTP probes |
+| `trimon.probe.duration` | Float64Gauge | `ms` | `trimon_probe_duration_milliseconds` | HTTP only; wall-clock from request start to body drain; NaN when no response received or for non-HTTP probes |
 | `trimon.probe.packet_loss` | Float64Gauge | `ratio` | `trimon_probe_packet_loss_ratio` | 1.0 on failure, NaN on error |
 | `trimon.probe.packets_sent` | Int64Counter | `{packets}` | `trimon_probe_packets_sent_total` | not incremented on error |
 | `trimon.probe.packets_received` | Int64Counter | `{packets}` | `trimon_probe_packets_received_total` | not incremented on error |
@@ -41,6 +42,8 @@ Recorded on every `Export()` call. Attributes: `probe.name`, `probe.type`,
 | `trimon.probe.up` | Int64Gauge | — | `trimon_probe_up` | 1 if status=success or partial (≥1 reply) |
 
 RTT gauges emit `NaN` on `failure` and `error` — rather than `0` or retaining the last value — because 0ms is physically impossible and would corrupt latency alerting thresholds, while NaN causes Grafana to break the graph line, making the absence of measurement visually unambiguous; this mirrors the OTel ecosystem convention and is analogous to how `probe.packet_loss` uses NaN on `error`.
+
+**Why RTT and duration are separate instruments:** ICMP's min/mean/max/stddev describe network jitter across N packets (a statistical distribution). HTTP always sends one request per tick; repeating requests 2–N would reuse the TCP connection and produce a bimodal distribution that makes mean and stddev misleading. A single `duration` (DNS + TCP + TLS + TTFB + body) is the canonical HTTP latency measure, matching the approach of blackbox_exporter, Datadog Synthetics, and Checkly.
 
 **`probe.success` vs `probe.up`:** intentional semantic difference.
 `probe.up` is the alerting signal (`ALERT IF probe_up == 0`); it is 1 for any partial

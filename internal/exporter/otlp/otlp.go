@@ -43,6 +43,7 @@ type Exporter struct {
 	// probe result instruments — recorded on every Export call
 	rttMin, rttMean, rttMax, rttStddev metric.Float64Gauge
 	packetLoss                         metric.Float64Gauge
+	httpDuration                       metric.Float64Gauge
 	pktSent                            metric.Int64Counter
 	pktReceived                        metric.Int64Counter
 	success                            metric.Int64Gauge
@@ -170,6 +171,10 @@ func (e *Exporter) registerInstruments(meter metric.Meter, version, commit strin
 	if err != nil {
 		return err
 	}
+	e.httpDuration, err = meter.Float64Gauge("trimon.probe.duration", metric.WithUnit("ms"))
+	if err != nil {
+		return err
+	}
 	e.success, err = meter.Int64Gauge("trimon.probe.success")
 	if err != nil {
 		return err
@@ -261,6 +266,7 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		successVal, upVal int64
 	)
 	rttMin, rttMean, rttMax, rttStddev := math.NaN(), math.NaN(), math.NaN(), math.NaN()
+	httpDuration := math.NaN()
 
 	if !r.Status.IsError() {
 		e.pktSent.Add(ctx, int64(r.PacketsSent), probeAttrs)
@@ -269,14 +275,17 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 
 	switch {
 	case r.Status.IsUp():
-		rttMin = r.RTTMinMS
-		rttMean = r.RTTMeanMS
-		rttMax = r.RTTMaxMS
-		rttStddev = r.RTTStddevMS
 		packetLoss = r.PacketLossRatio
 		upVal = 1
 		if r.Status.IsSuccess() {
 			successVal = 1
+		}
+		// RTT stats: multi-packet probes only (ICMP). HTTP uses DurationMS instead.
+		if r.ProbeType != types.ProbeTypeHTTP {
+			rttMin = r.RTTMinMS
+			rttMean = r.RTTMeanMS
+			rttMax = r.RTTMaxMS
+			rttStddev = r.RTTStddevMS
 		}
 	case r.Status == types.StatusFailure:
 		packetLoss = 1.0
@@ -292,6 +301,12 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		))
 	}
 
+	// HTTP duration: emit actual value when a response was received (DurationMS > 0),
+	// NaN otherwise (error, no response, or non-HTTP probe).
+	if r.ProbeType == types.ProbeTypeHTTP && r.DurationMS > 0 {
+		httpDuration = r.DurationMS
+	}
+
 	e.rttMin.Record(ctx, rttMin, probeAttrs)
 	e.rttMean.Record(ctx, rttMean, probeAttrs)
 	e.rttMax.Record(ctx, rttMax, probeAttrs)
@@ -299,6 +314,7 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 	e.packetLoss.Record(ctx, packetLoss, probeAttrs)
 	e.success.Record(ctx, successVal, probeAttrs)
 	e.probeUp.Record(ctx, upVal, probeAttrs)
+	e.httpDuration.Record(ctx, httpDuration, probeAttrs)
 
 	return nil
 }

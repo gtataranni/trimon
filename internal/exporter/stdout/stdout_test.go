@@ -134,6 +134,69 @@ func TestJSONRTTOmittedOnError(t *testing.T) {
 	}
 }
 
+func TestHTTPJSONDurationEmitted(t *testing.T) {
+	var buf bytes.Buffer
+	e := newWithWriter(&buf, "json")
+
+	r := types.ProbeResult{
+		Timestamp:       time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC),
+		ProbeName:       "web-check",
+		Target:          "93.184.216.34",
+		SourceIP:        "0.0.0.0",
+		ProbeType:       "http",
+		PacketsSent:     1,
+		PacketsReceived: 1,
+		DurationMS:      42.5,
+		PacketLossRatio: 0.0,
+		Status:          types.StatusSuccess,
+		Labels:          map[string]string{},
+	}
+	if err := e.Export(context.Background(), r); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	var rec jsonRecord
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("json decode: %v\nraw: %s", err, buf.String())
+	}
+	if rec.DurationMS == nil || *rec.DurationMS != 42.5 {
+		t.Errorf("duration_ms: want 42.5, got %v", rec.DurationMS)
+	}
+	// RTT fields must be absent for HTTP probes.
+	for _, field := range []string{"rtt_min_ms", "rtt_mean_ms", "rtt_max_ms", "rtt_stddev_ms"} {
+		if strings.Contains(buf.String(), field) {
+			t.Errorf("field %q must be absent for HTTP probe", field)
+		}
+	}
+}
+
+func TestHTTPTextOutput(t *testing.T) {
+	var buf bytes.Buffer
+	e := newWithWriter(&buf, "text")
+
+	r := types.ProbeResult{
+		Timestamp:       time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC),
+		ProbeName:       "web-check",
+		Target:          "93.184.216.34",
+		SourceIP:        "0.0.0.0",
+		ProbeType:       "http",
+		DurationMS:      42.5,
+		PacketLossRatio: 0.0,
+		Status:          types.StatusSuccess,
+	}
+	if err := e.Export(context.Background(), r); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	line := buf.String()
+	if !strings.Contains(line, "duration=42.50ms") {
+		t.Errorf("expected duration=42.50ms in HTTP text output: %q", line)
+	}
+	if strings.Contains(line, "rtt_mean") {
+		t.Errorf("rtt_mean must be absent from HTTP text output: %q", line)
+	}
+}
+
 func TestNilLabelsBecomesEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	e := newWithWriter(&buf, "json")

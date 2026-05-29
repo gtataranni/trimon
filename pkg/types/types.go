@@ -6,6 +6,9 @@ import "time"
 type Status string
 
 const (
+	ProbeTypeICMP = "icmp"
+	ProbeTypeHTTP = "http"
+
 	StatusSuccess Status = "success" // 0% packet loss
 	StatusPartial Status = "partial" // 0% < loss < 100%
 	StatusFailure Status = "failure" // 100% loss
@@ -16,6 +19,17 @@ func (s Status) IsSuccess() bool { return s == StatusSuccess }
 func (s Status) IsUp() bool      { return s == StatusSuccess || s == StatusPartial }
 func (s Status) IsError() bool   { return s == StatusError }
 
+// HTTPConfig holds HTTP/HTTPS probe parameters.
+type HTTPConfig struct {
+	Scheme               string // "http" or "https"
+	Port                 int    // 0 = scheme default (80/443)
+	Path                 string // default "/"
+	Method               string // "GET", "HEAD", or "POST"
+	ExpectedStatus       int    // 0 = any 2xx; otherwise exact match
+	FollowRedirects      bool
+	TLSExpiryWarningDays int // if > 0: StatusPartial when cert expires within N days
+}
+
 // ProbeConfig is the merged, validated probe configuration built by internal/config.
 type ProbeConfig struct {
 	Name           string
@@ -24,10 +38,11 @@ type ProbeConfig struct {
 	MaxResolvedIPs int      // cap on IPs probed per FQDN entry (0 = unlimited)
 	SourceIP       string
 	Interval       time.Duration // scheduler cadence: how often to run the probe
-	PacketInterval time.Duration // pro-bing: wait between individual ICMP echo sends
+	PacketInterval time.Duration // wait between individual probe attempts
 	Timeout        time.Duration
 	Count          int
 	Labels         map[string]string
+	HTTP           *HTTPConfig
 }
 
 // ProbeResult is the output of a single probe run against one IP target.
@@ -42,11 +57,14 @@ type ProbeResult struct {
 	ProbeType       string `json:"type"`
 	PacketsSent     int    `json:"packets_sent"`
 	PacketsReceived int    `json:"packets_received"`
-	// RTT* only valid when PacketsReceived > 0; zero otherwise.
-	RTTMinMS        float64           `json:"rtt_min_ms"`
-	RTTMeanMS       float64           `json:"rtt_mean_ms"`
-	RTTMaxMS        float64           `json:"rtt_max_ms"`
-	RTTStddevMS     float64           `json:"rtt_stddev_ms"`
+	// RTT* only valid for multi-packet probes (e.g. ICMP) when PacketsReceived > 0.
+	RTTMinMS    float64 `json:"rtt_min_ms"`
+	RTTMeanMS   float64 `json:"rtt_mean_ms"`
+	RTTMaxMS    float64 `json:"rtt_max_ms"`
+	RTTStddevMS float64 `json:"rtt_stddev_ms"`
+	// DurationMS is the wall-clock time from request start to body drain.
+	// Set by single-request probes (e.g. HTTP); zero for multi-packet probes.
+	DurationMS      float64           `json:"duration_ms,omitempty"`
 	PacketLossRatio float64           `json:"packet_loss"`
 	Status          Status            `json:"status"`
 	ErrorMsg        string            `json:"error_msg,omitempty"`

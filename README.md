@@ -3,7 +3,7 @@
 *Push-based multi-line **T**arget **R**eachability **I**nspection and **MON**itoring for multi-homed networks*
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.22+-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://golang.org/)
 
 trimon is an open-source, push-based multi-protocol IP target monitoring daemon that exports results to the OpenTelemetry stack. It is particularly useful in multi-line environments and SD-WAN setups where routing agents need continuous per-interface latency signals — not scrape-triggered snapshots. Pull-based tools like blackbox_exporter only measure when scraped, creating gaps between scrape intervals. trimon pushes results continuously from each source IP, running one goroutine per probe on its own configurable schedule.
 

@@ -21,6 +21,7 @@ import (
 	stdoutexp "github.com/gtataranni/trimon/internal/exporter/stdout"
 	"github.com/gtataranni/trimon/internal/pipeline"
 	"github.com/gtataranni/trimon/internal/probe"
+	httpprobe "github.com/gtataranni/trimon/internal/probe/http"
 	icmpprobe "github.com/gtataranni/trimon/internal/probe/icmp"
 	"github.com/gtataranni/trimon/internal/scheduler"
 	"github.com/gtataranni/trimon/internal/server"
@@ -65,6 +66,8 @@ func main() {
 		switch probeCfg.Type {
 		case "icmp":
 			return icmpprobe.New(probeCfg), nil
+		case "http":
+			return httpprobe.New(probeCfg), nil
 		default:
 			return nil, fmt.Errorf("unknown probe type %q", probeCfg.Type)
 		}

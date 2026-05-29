@@ -614,6 +614,7 @@ func TestAllMetricsPresent(t *testing.T) {
 		"trimon.probe.rtt.mean",
 		"trimon.probe.rtt.max",
 		"trimon.probe.rtt.stddev",
+		"trimon.probe.duration",
 		"trimon.probe.packet_loss",
 		"trimon.probe.packets_sent",
 		"trimon.probe.packets_received",
@@ -795,6 +796,109 @@ func TestBridgeExporterErrors(t *testing.T) {
 	}
 	if !strings.Contains(body, `exporter_name="otlp"`) {
 		t.Errorf(`exporter_name="otlp" not found in /metrics output\n%s`, body)
+	}
+}
+
+// TestHTTPDurationEmitted verifies that a successful HTTP result populates
+// trimon.probe.duration and emits NaN for RTT gauges.
+func TestHTTPDurationEmitted(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	result := types.ProbeResult{
+		ProbeName:       "web-check",
+		ProbeType:       "http",
+		Target:          "93.184.216.34",
+		SourceIP:        "0.0.0.0",
+		Status:          types.StatusSuccess,
+		PacketsSent:     1,
+		PacketsReceived: 1,
+		PacketLossRatio: 0.0,
+		DurationMS:      42.5,
+	}
+
+	if err := e.Export(ctx, result); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	ms := collectMetrics(t, reader)
+
+	dur, _ := findFloat64Gauge(t, ms, "trimon.probe.duration")
+	if dur != 42.5 {
+		t.Errorf("trimon.probe.duration: got %f, want 42.5", dur)
+	}
+
+	// RTT gauges must be NaN for HTTP probes.
+	for _, rttName := range []string{
+		"trimon.probe.rtt.min",
+		"trimon.probe.rtt.mean",
+		"trimon.probe.rtt.max",
+		"trimon.probe.rtt.stddev",
+	} {
+		v, _ := findFloat64Gauge(t, ms, rttName)
+		if !math.IsNaN(v) {
+			t.Errorf("%s: got %f, want NaN for HTTP probe", rttName, v)
+		}
+	}
+}
+
+// TestHTTPDurationNaNOnError verifies that trimon.probe.duration is NaN when
+// the HTTP probe could not reach the server (DurationMS == 0).
+func TestHTTPDurationNaNOnError(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	result := types.ProbeResult{
+		ProbeName: "web-check",
+		ProbeType: "http",
+		Target:    "93.184.216.34",
+		SourceIP:  "0.0.0.0",
+		Status:    types.StatusError,
+		ErrorType: "resolve_error",
+		ErrorMsg:  "lookup failed",
+		// DurationMS == 0: no response received
+	}
+
+	if err := e.Export(ctx, result); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	ms := collectMetrics(t, reader)
+
+	dur, _ := findFloat64Gauge(t, ms, "trimon.probe.duration")
+	if !math.IsNaN(dur) {
+		t.Errorf("trimon.probe.duration: got %f, want NaN on error with no response", dur)
+	}
+}
+
+// TestHTTPDurationNaNForNonHTTP verifies that trimon.probe.duration is NaN for
+// non-HTTP probes (e.g. ICMP) which don't set DurationMS.
+func TestHTTPDurationNaNForNonHTTP(t *testing.T) {
+	e, reader := newTestExporter(t)
+	ctx := context.Background()
+
+	result := types.ProbeResult{
+		ProbeName:       "ping-gw",
+		ProbeType:       "icmp",
+		Target:          "192.168.1.1",
+		SourceIP:        "0.0.0.0",
+		Status:          types.StatusSuccess,
+		PacketsSent:     3,
+		PacketsReceived: 3,
+		PacketLossRatio: 0.0,
+		RTTMeanMS:       12.5,
+		// DurationMS == 0: ICMP does not use it
+	}
+
+	if err := e.Export(ctx, result); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	ms := collectMetrics(t, reader)
+
+	dur, _ := findFloat64Gauge(t, ms, "trimon.probe.duration")
+	if !math.IsNaN(dur) {
+		t.Errorf("trimon.probe.duration: got %f, want NaN for ICMP probe", dur)
 	}
 }
 
