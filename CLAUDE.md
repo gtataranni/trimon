@@ -113,7 +113,7 @@ sudo setcap cap_net_raw+ep ./bin/trimon
 - **No global state** outside `cmd/trimon/main.go`.
 - **Commits:** conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
 Use "Assisted-by: AGENT_NAME:MODEL_VERSION" instead of "Co-Authored-By: name email". Example: `Assisted-by: claude-code:claude-sonnet-4-6`.
-- **Build**: use `bin/` as target dir, or use `make` commands
+- **Build**: use `bin/` as target dir for binaries when not using container. When not on linux, use containers - see [Makefile](Makefile).
 
 ## Status semantics — get this right
 
