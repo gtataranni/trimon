@@ -146,7 +146,8 @@ func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeRes
 		}
 		return result
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	//nolint:errcheck // draining the body for connection reuse; copy errors are not actionable
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	result.DurationMS = float64(time.Since(start).Nanoseconds()) / 1e6
 

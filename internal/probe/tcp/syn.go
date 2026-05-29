@@ -207,7 +207,11 @@ func resolveSourceIP(sourceIP string, dstIP net.IP) (net.IP, error) {
 		return nil, fmt.Errorf("syn: determine source IP for %v: %w", dstIP, err)
 	}
 	defer func() { _ = c.Close() }()
-	ip := c.LocalAddr().(*net.UDPAddr).IP.To4()
+	udpAddr, ok := c.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return nil, fmt.Errorf("syn: unexpected local address type %T for route to %v", c.LocalAddr(), dstIP)
+	}
+	ip := udpAddr.IP.To4()
 	if ip == nil {
 		return nil, fmt.Errorf("syn: no IPv4 source route to %v", dstIP)
 	}

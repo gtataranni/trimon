@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -75,7 +76,11 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("http server bind %s: %w", s.httpServer.Addr, err)
 	}
-	go func() { _ = s.httpServer.Serve(ln) }()
+	go func() {
+		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error("http server stopped unexpectedly", "error", err)
+		}
+	}()
 	return nil
 }
 
@@ -156,7 +161,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/x-yaml")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(b)
+		//nolint:errcheck // best-effort write to client; headers already sent, nothing to do on failure
+		w.Write(b)
 		return
 	}
 
@@ -234,5 +240,6 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
+	//nolint:errcheck // best-effort write to client; headers already sent, nothing to do on failure
+	enc.Encode(v)
 }

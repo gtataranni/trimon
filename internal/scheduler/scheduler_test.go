@@ -99,7 +99,7 @@ func TestSchedulerWorkerCount(t *testing.T) {
 // SetDroppedResultRecorder is invoked when the results channel is full.
 func TestDroppedResultRecorder(t *testing.T) {
 	// Zero-capacity channel: every send will drop.
-	results := make(chan types.ProbeResult, 0)
+	results := make(chan types.ProbeResult)
 	var dropped atomic.Int64
 	var droppedName string
 

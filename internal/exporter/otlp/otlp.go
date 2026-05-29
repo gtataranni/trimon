@@ -67,7 +67,10 @@ type Exporter struct {
 func New(ctx context.Context, cfg config.OTLPExporterConfig, version, commit string, logger *slog.Logger) (*Exporter, error) {
 	e := &Exporter{logger: logger, shutdownTimeout: cfg.ShutdownTimeout}
 
-	hostname, _ := os.Hostname()
+	hostname, err := os.Hostname()
+	if err != nil {
+		logger.Debug("otlp: could not determine hostname", "error", err)
+	}
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName("trimon"),
@@ -113,7 +116,9 @@ func New(ctx context.Context, cfg config.OTLPExporterConfig, version, commit str
 
 	meter := provider.Meter(instrScope)
 	if err := e.registerInstruments(meter, version, commit); err != nil {
-		_ = provider.Shutdown(ctx)
+		if shutErr := provider.Shutdown(ctx); shutErr != nil {
+			logger.Debug("otlp: provider shutdown after failed registration", "error", shutErr)
+		}
 		return nil, fmt.Errorf("otlp: register instruments: %w", err)
 	}
 

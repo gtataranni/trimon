@@ -388,22 +388,13 @@ func TestStatusError(t *testing.T) {
 		}
 	}
 
-	// Packet counters must NOT be incremented on error (probe could not run).
+	// Packet counters must NOT be incremented on error (probe could not run),
+	// so their series must be entirely absent from the export.
 	for _, name := range []string{"trimon.probe.packets_sent", "trimon.probe.packets_received"} {
-		found := false
 		for _, m := range ms {
 			if m.Name == name {
-				found = true
-				s := m.Data.(metricdata.Sum[int64])
-				for _, dp := range s.DataPoints {
-					if dp.Value != 0 {
-						t.Errorf("%s: got %d, want 0 on error", name, dp.Value)
-					}
-				}
+				t.Errorf("%s: series present on error, want absent", name)
 			}
-		}
-		if found {
-			// counter was recorded with value 0 — that's acceptable
 		}
 	}
 }
@@ -721,8 +712,9 @@ func TestBridgeProbeUp(t *testing.T) {
 	if !strings.Contains(body, "trimon_probe_up") {
 		t.Errorf("trimon_probe_up not found in /metrics output\n%s", body)
 	}
-	if !strings.Contains(body, "trimon_probe_up_total") {
-		// probe_up is a gauge, not _total
+	// probe_up is a gauge, so the Prometheus bridge must not append a _total suffix.
+	if strings.Contains(body, "trimon_probe_up_total") {
+		t.Errorf("trimon_probe_up must be a gauge, but a _total counter suffix appeared\n%s", body)
 	}
 	// Verify packet counters appear
 	if !strings.Contains(body, "trimon_probe_packets_sent") {
