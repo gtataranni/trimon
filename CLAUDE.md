@@ -149,6 +149,29 @@ Key invariants agents frequently get wrong:
 - RTT gauges and `trimon_probe_packet_loss_ratio` emit **NaN** on `status=error`.
 - Counters (`packets_sent`, `packets_received`) are **not incremented** on `status=error`.
 
+### Label cardinality — never put per-run values in `ProbeResult.Labels`
+
+Every entry in `ProbeResult.Labels` is turned into an OTel **metric attribute** by
+`buildAttrs` in `internal/exporter/otlp/otlp.go` and attached to *all* per-result series
+(`probe_up`, `success`, `packet_loss`, the RTT gauges, the packet counters, …). A label
+whose value changes between probe runs therefore creates a brand-new time series on every
+tick and orphans the previous one — an **unbounded cardinality leak** that degrades both
+Prometheus and the collector.
+
+A value may become a label **only if its domain is small and stable** — e.g. `probe.name`,
+`probe.target`, `probe.source_ip`, or static user-defined config labels. **Never** put
+per-run or high-churn values in `Labels`:
+
+- ephemeral source ports, request/connection IDs, session tokens
+- timestamps, durations, measured latencies
+- monotonic or slowly-drifting counters (e.g. TLS days-until-expiry)
+
+If such data is useful for debugging, log it with `slog` at debug level. If it genuinely
+needs to be in metrics, expose it as a numeric **gauge value** with a bounded attribute set
+(like the existing RTT gauges) — never as an attribute key/value. When in doubt, ask: *"how
+many distinct values can this take over the daemon's lifetime?"* If the answer is "unbounded"
+or "grows with time", it is not a label.
+
 ---
 
 ## Project phases & roadmap
