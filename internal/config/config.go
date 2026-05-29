@@ -534,8 +534,11 @@ func validateOneTarget(entry string) error {
 		return nil
 	}
 	addrs, err := net.LookupHost(entry)
-	if err != nil || len(addrs) == 0 {
-		return fmt.Errorf("target %q is not a valid IP and could not be resolved: %v", entry, err)
+	if err != nil {
+		return fmt.Errorf("target %q is not a valid IP and could not be resolved: %w", entry, err)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("target %q is not a valid IP and resolved to no addresses", entry)
 	}
 	return nil
 }

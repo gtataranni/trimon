@@ -6,8 +6,14 @@ linters:
   enable:
     - errcheck
     - govet
+    - ineffassign
     - staticcheck
     - unused
+    - bodyclose
+    - errorlint
+    - fatcontext
+    - copyloopvar
+    - misspell
   settings:
     errcheck:
       check-type-assertions: true
