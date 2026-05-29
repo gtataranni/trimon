@@ -34,6 +34,45 @@ Only begin coding once the design is confirmed.
 
 ## OPTIMIZATION
 
+### OPT-18 · HIGH — Remove RTT statistics from HTTP probe; replace with single-request duration
+**Status:** DONE
+**Files:** `internal/probe/http/http.go`, `internal/probe/http/http_unit_test.go`, `pkg/types/types.go`, `docs/metrics.md`, `internal/exporter/otlp/otlp.go`, `internal/exporter/stdout/stdout.go`
+
+**Context:** HTTP and ICMP have different statistical semantics. For ICMP, `Count=N` sends N independent packets over the same network path; min/mean/max/stddev meaningfully describe network jitter. For HTTP, requests 2–N reuse the TCP connection (skipping DNS + TCP handshake + TLS), producing a bimodal RTT distribution that makes stddev and mean actively misleading. No comparable HTTP monitoring tool (blackbox_exporter, Datadog Synthetics, Checkly) computes repeated-request RTT statistics — they all measure a single request.
+
+**Action:**
+1. Remove `Count` and `PacketInterval` semantics from the HTTP prober — always send exactly one request per probe tick. The scheduler cadence (`Interval`) already controls how often the probe runs.
+2. Drop `RTTMinMS`, `RTTMeanMS`, `RTTMaxMS`, `RTTStddevMS` from `ProbeResult` for HTTP results; replace with a single `DurationMS float64` representing wall-clock time from request start to body drain.
+3. Consider whether `PacketsSent`/`PacketsReceived`/`PacketLossRatio` still make sense for a single-request model, or whether HTTP should use a simpler `up bool` equivalent. If kept, they are always 1/0–1/0.0–1.0.
+4. Update `docs/metrics.md` to reflect the new HTTP metric shape.
+5. Update unit tests accordingly; remove tests that were specifically exercising multi-request RTT behaviour.
+
+**Note:** `probe.RTTStats` in `internal/probe/targets.go` becomes unused after this change — delete it if no other prober calls it.
+
+---
+
+### OPT-19 · MEDIUM — Add per-phase HTTP timing breakdown via httptrace
+**Status:** OPEN
+**Depends on:** OPT-18
+**Files:** `internal/probe/http/http.go`, `pkg/types/types.go`, `docs/metrics.md`
+
+**Context:** After reducing HTTP to a single request (OPT-18), the single `DurationMS` field blends DNS resolution, TCP handshake, TLS handshake, time-to-first-byte (TTFB), and body transfer into one opaque number. This mirrors what blackbox_exporter provides via `probe_http_duration_seconds{phase}` and is the most actionable HTTP metric for diagnosing latency — it answers "is it DNS, the network, or the server?" without requiring a distributed trace.
+
+**Action:**
+1. Use `net/http/httptrace.ClientTrace` to capture phase timestamps inside `probeOne`. No new dependency — `net/http/httptrace` is stdlib.
+2. Populate new fields on `ProbeResult` (or a nested `HTTPTimings` struct):
+   - `DNSLookupMS` — time from DNS start to DNS done (zero if target was a bare IP)
+   - `TCPConnectMS` — time from connect start to connect done
+   - `TLSHandshakeMS` — time from TLS start to TLS done (zero for plain HTTP)
+   - `TTFBMS` — time from request sent to first response byte received
+   - `TransferMS` — time from first byte to body fully read
+   - `TotalDurationMS` — replaces `DurationMS` from OPT-18 (sum of all phases)
+3. All phase fields are zero when the phase did not occur (e.g. `TLSHandshakeMS=0` for HTTP, `DNSLookupMS=0` for bare-IP targets).
+4. Update `docs/metrics.md` and the Prometheus/OTLP instrument definitions in `internal/exporter/otlp/otlp.go`.
+5. Add unit tests that verify each phase field is populated or zero as expected.
+
+**Note:** pro-bing's `HTTPCaller` also wraps `httptrace` but its scheduler model conflicts with trimon's. Implement directly in `http.go` rather than adopting `HTTPCaller`.
+
 ---
 
 ## TRACEABILITY
@@ -58,3 +97,13 @@ Integration tests confirmed that `context.WithTimeout` cancellation produces the
 2. Verify that pro-bing does not run forever when `pinger.Timeout == 0` and a context deadline is set. If it does, document this assumption with a comment.
 3. In `icmp_test.go`, update the two tests that use `context.Background()` to instead use `context.WithTimeout(context.Background(), cfg.Timeout)`, mirroring what the scheduler does. This ensures integration tests exercise the same code path as production.
 4. Add a comment to the `Run()` signature: the context must carry a deadline; callers that omit one will block until all packets are sent (no built-in fallback timeout).
+
+### OPT-16 · LOW — add resolve_fqnd_every
+**Status:** OPEN  
+**Depends on:** none  
+**Context:** we could add a config option to decide when we want to resolve target names again, instead of resolving them at each probe.
+
+### OPT-17 · MID - simpler target groups
+**Status:** OPEN  
+**Depends on:** none  
+**Context:** revert to single target and solve target grouping by simply using common custom labels. Reduces responsibility of trimon by delegating complexity downstream.
