@@ -3,10 +3,8 @@ package tcp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -51,113 +49,38 @@ func (p *Prober) Type() string { return "tcp" }
 // time), then probes all IPs in parallel within ctx. One ProbeResult is
 // returned per probed IP.
 func (p *Prober) Run(ctx context.Context) []types.ProbeResult {
-	items := probe.ExpandTargets(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs)
-	if len(items) == 0 {
-		return nil
-	}
-
-	results := make([]types.ProbeResult, len(items))
-	var wg sync.WaitGroup
-	for i, item := range items {
-		wg.Add(1)
-		go func(idx int, wi probe.WorkItem) {
-			defer wg.Done()
-			results[idx] = p.probeOne(ctx, wi)
-		}(i, item)
-	}
-	wg.Wait()
-	return results
+	return probe.RunWorkItems(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs, p.probeOne)
 }
 
 // probeOne runs Count TCP attempts against a single IP and returns a populated result.
 func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeResult {
-	cfg := p.cfg
-	result := types.ProbeResult{
-		Timestamp: time.Now().UTC(),
-		ProbeName: cfg.Name,
-		Target:    wi.IP,
-		FQDN:      wi.FQDN,
-		SourceIP:  cfg.SourceIP,
-		ProbeType: "tcp",
-		Labels:    cfg.Labels,
-	}
-
-	// If ExpandTargets could not resolve the FQDN (IP == FQDN), emit an error result.
-	if wi.FQDN != "" && wi.IP == wi.FQDN {
-		result.Status = types.StatusError
-		result.ErrorType = "resolve_error"
-		result.ErrorMsg = fmt.Sprintf("resolve target %q: lookup failed", wi.FQDN)
+	result, ok := probe.NewResult(p.cfg, wi, p.Type())
+	if !ok {
 		return result
 	}
 
 	attempt := p.attemptFn()
+	var synAckGot bool
 
-	var (
-		samples   []time.Duration
-		lastErr   error
-		synAckGot bool
-	)
-	for i := 0; i < cfg.Count; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-			case <-time.After(cfg.PacketInterval):
-			}
-			if ctx.Err() != nil {
-				break
-			}
-		}
-
+	live := probe.RunLoop(ctx, &result, p.cfg.Count, p.cfg.PacketInterval, func(ctx context.Context) probe.Attempt {
 		rtt, state, err := attempt(ctx, wi.IP)
-		result.PacketsSent++
 		if err != nil {
 			// A real probe error (e.g. socket/permission failure) aborts the run.
-			lastErr = err
-			break
+			return probe.Attempt{Err: err}
 		}
 		if !state.reachable() {
-			continue
+			return probe.Attempt{}
 		}
-		result.PacketsReceived++
-		samples = append(samples, rtt)
 		if state == stateOpen {
 			synAckGot = true
 		}
-	}
-
-	// A setup/socket error before any reply means the probe could not run.
-	if lastErr != nil && result.PacketsReceived == 0 {
-		result.Status = types.StatusError
-		result.ErrorType = "probe_error"
-		result.ErrorMsg = lastErr.Error()
-		return result
-	}
-
-	if result.PacketsSent == 0 {
-		// ctx was already done before the first attempt could be made.
-		result.Status = types.StatusError
-		result.ErrorType = "cancelled"
-		result.ErrorMsg = "no attempts made before context cancellation"
-		return result
-	}
-
-	result.PacketLossRatio = 1 - float64(result.PacketsReceived)/float64(result.PacketsSent)
-
-	switch {
-	case result.PacketLossRatio == 0:
-		result.Status = types.StatusSuccess
-	case result.PacketLossRatio >= 1:
-		result.Status = types.StatusFailure
-	default:
-		result.Status = types.StatusPartial
-	}
-
-	if result.PacketsReceived > 0 {
-		result.RTTMinMS, result.RTTMeanMS, result.RTTMaxMS, result.RTTStddevMS = probe.RTTStats(samples)
-	}
+		return probe.Attempt{RTT: rtt, Received: true}
+	})
 
 	// PortOpen is a tri-state: set it (true/false) for any non-error TCP result.
-	result.PortOpen = &synAckGot
+	if live {
+		result.PortOpen = &synAckGot
+	}
 
 	return result
 }

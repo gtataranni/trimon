@@ -9,7 +9,6 @@ import (
 	nethttp "net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gtataranni/trimon/internal/probe"
@@ -68,43 +67,15 @@ func (p *Prober) Name() string { return p.cfg.Name }
 func (p *Prober) Type() string { return "http" }
 
 func (p *Prober) Run(ctx context.Context) []types.ProbeResult {
-	items := probe.ExpandTargets(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs)
-	if len(items) == 0 {
-		return nil
-	}
-	results := make([]types.ProbeResult, len(items))
-	var wg sync.WaitGroup
-	for i, item := range items {
-		wg.Add(1)
-		go func(idx int, wi probe.WorkItem) {
-			defer wg.Done()
-			results[idx] = p.probeOne(ctx, wi)
-		}(i, item)
-	}
-	wg.Wait()
-	return results
+	return probe.RunWorkItems(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs, p.probeOne)
 }
 
 func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeResult {
-	cfg := p.cfg
-	hcfg := cfg.HTTP
-
-	result := types.ProbeResult{
-		Timestamp: time.Now().UTC(),
-		ProbeName: cfg.Name,
-		Target:    wi.IP,
-		FQDN:      wi.FQDN,
-		SourceIP:  cfg.SourceIP,
-		ProbeType: "http",
-		Labels:    cfg.Labels,
-	}
-
-	if wi.FQDN != "" && wi.IP == wi.FQDN {
-		result.Status = types.StatusError
-		result.ErrorType = "resolve_error"
-		result.ErrorMsg = fmt.Sprintf("resolve target %q: lookup failed", wi.FQDN)
+	result, ok := probe.NewResult(p.cfg, wi, p.Type())
+	if !ok {
 		return result
 	}
+	hcfg := p.cfg.HTTP
 
 	// Build URL: always connect to the resolved IP; Host header / SNI use FQDN.
 	var host string

@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -67,121 +65,46 @@ func (p *Prober) Type() string { return "udp" }
 // time), then probes all IPs in parallel within ctx. One ProbeResult is
 // returned per probed IP.
 func (p *Prober) Run(ctx context.Context) []types.ProbeResult {
-	items := probe.ExpandTargets(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs)
-	if len(items) == 0 {
-		return nil
-	}
-
-	results := make([]types.ProbeResult, len(items))
-	var wg sync.WaitGroup
-	for i, item := range items {
-		wg.Add(1)
-		go func(idx int, wi probe.WorkItem) {
-			defer wg.Done()
-			results[idx] = p.probeOne(ctx, wi)
-		}(i, item)
-	}
-	wg.Wait()
-	return results
+	return probe.RunWorkItems(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs, p.probeOne)
 }
 
 // probeOne runs Count UDP attempts against a single IP and returns a populated result.
 func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeResult {
-	cfg := p.cfg
-	result := types.ProbeResult{
-		Timestamp: time.Now().UTC(),
-		ProbeName: cfg.Name,
-		Target:    wi.IP,
-		FQDN:      wi.FQDN,
-		SourceIP:  cfg.SourceIP,
-		ProbeType: "udp",
-		Labels:    cfg.Labels,
-	}
-
-	// If ExpandTargets could not resolve the FQDN (IP == FQDN), emit an error result.
-	if wi.FQDN != "" && wi.IP == wi.FQDN {
-		result.Status = types.StatusError
-		result.ErrorType = "resolve_error"
-		result.ErrorMsg = fmt.Sprintf("resolve target %q: lookup failed", wi.FQDN)
+	result, ok := probe.NewResult(p.cfg, wi, p.Type())
+	if !ok {
 		return result
 	}
 
 	// Payload and ExpectedResponse are sent and matched as raw bytes. An empty
 	// payload sends a zero-length datagram.
-	payload := []byte(cfg.UDP.Payload)
-	expected := []byte(cfg.UDP.ExpectedResponse)
-	addr := net.JoinHostPort(wi.IP, strconv.Itoa(cfg.UDP.Port))
+	payload := []byte(p.cfg.UDP.Payload)
+	expected := []byte(p.cfg.UDP.ExpectedResponse)
+	addr := net.JoinHostPort(wi.IP, strconv.Itoa(p.cfg.UDP.Port))
+	var openGot bool
 
-	var (
-		samples []time.Duration
-		lastErr error
-		openGot bool
-	)
-	for i := 0; i < cfg.Count; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-			case <-time.After(cfg.PacketInterval):
-			}
-			if ctx.Err() != nil {
-				break
-			}
-		}
-
-		rtt, state, err := udpAttempt(ctx, cfg.SourceIP, addr, payload, expected, cfg.Timeout)
-		result.PacketsSent++
+	live := probe.RunLoop(ctx, &result, p.cfg.Count, p.cfg.PacketInterval, func(ctx context.Context) probe.Attempt {
+		rtt, state, err := udpAttempt(ctx, p.cfg.SourceIP, addr, payload, expected, p.cfg.Timeout)
 		if err != nil {
 			// A socket setup failure (e.g. bad source binding) aborts the run.
-			lastErr = err
-			break
+			return probe.Attempt{Err: err}
 		}
 		if !state.reachable() {
-			continue
+			return probe.Attempt{}
 		}
 		// stateClosed (ICMP port-unreachable) counts as reachable, just like a
 		// TCP RST: the host answered, so it is not packet loss.
-		result.PacketsReceived++
-		samples = append(samples, rtt)
 		if state == stateOpen {
 			openGot = true
 		}
-	}
-
-	// A setup/socket error before any reply means the probe could not run.
-	if lastErr != nil && result.PacketsReceived == 0 {
-		result.Status = types.StatusError
-		result.ErrorType = "probe_error"
-		result.ErrorMsg = lastErr.Error()
-		return result
-	}
-
-	if result.PacketsSent == 0 {
-		// ctx was already done before the first attempt could be made.
-		result.Status = types.StatusError
-		result.ErrorType = "cancelled"
-		result.ErrorMsg = "no attempts made before context cancellation"
-		return result
-	}
-
-	result.PacketLossRatio = 1 - float64(result.PacketsReceived)/float64(result.PacketsSent)
-
-	switch {
-	case result.PacketLossRatio == 0:
-		result.Status = types.StatusSuccess
-	case result.PacketLossRatio >= 1:
-		result.Status = types.StatusFailure
-	default:
-		result.Status = types.StatusPartial
-	}
-
-	if result.PacketsReceived > 0 {
-		result.RTTMinMS, result.RTTMeanMS, result.RTTMaxMS, result.RTTStddevMS = probe.RTTStats(samples)
-	}
+		return probe.Attempt{RTT: rtt, Received: true}
+	})
 
 	// PortOpen is a tri-state: set it (true/false) for any non-error UDP result.
 	// true = a (matching) reply arrived; false = closed (ICMP unreachable) or only
 	// silence. Combine with probe.up to tell closed (up=1) from open|filtered (up=0).
-	result.PortOpen = &openGot
+	if live {
+		result.PortOpen = &openGot
+	}
 
 	return result
 }

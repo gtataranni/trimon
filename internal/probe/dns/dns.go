@@ -107,49 +107,12 @@ func (p *Prober) probeOne(ctx context.Context, qname, server string, serverErr e
 	// matching may then fail for very large record sets, which is rare.
 	client := &dns.Client{Timeout: cfg.Timeout}
 
-	var samples []time.Duration
-	for i := 0; i < cfg.Count; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-			case <-time.After(cfg.PacketInterval):
-			}
-			if ctx.Err() != nil {
-				break
-			}
-		}
-
+	// dnsAttempt never reports a fatal error: a query-time failure (timeout,
+	// SERVFAIL, mismatch) is loss, not StatusError.
+	probe.RunLoop(ctx, &result, cfg.Count, cfg.PacketInterval, func(ctx context.Context) probe.Attempt {
 		rtt, ok := dnsAttempt(ctx, client, msg, server, qtype, cfg.DNS.ExpectedAnswer)
-		result.PacketsSent++
-		if !ok {
-			continue
-		}
-		result.PacketsReceived++
-		samples = append(samples, rtt)
-	}
-
-	if result.PacketsSent == 0 {
-		// ctx was already done before the first attempt could be made.
-		result.Status = types.StatusError
-		result.ErrorType = "cancelled"
-		result.ErrorMsg = "no attempts made before context cancellation"
-		return result
-	}
-
-	result.PacketLossRatio = 1 - float64(result.PacketsReceived)/float64(result.PacketsSent)
-
-	switch {
-	case result.PacketLossRatio == 0:
-		result.Status = types.StatusSuccess
-	case result.PacketLossRatio >= 1:
-		result.Status = types.StatusFailure
-	default:
-		result.Status = types.StatusPartial
-	}
-
-	if result.PacketsReceived > 0 {
-		result.RTTMinMS, result.RTTMeanMS, result.RTTMaxMS, result.RTTStddevMS = probe.RTTStats(samples)
-	}
+		return probe.Attempt{RTT: rtt, Received: ok}
+	})
 
 	return result
 }

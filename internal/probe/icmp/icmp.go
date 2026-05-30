@@ -3,8 +3,6 @@ package icmp
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
 
@@ -29,41 +27,13 @@ func (p *Prober) Type() string { return "icmp" }
 // call time), then pings all IPs in parallel within ctx. One ProbeResult is
 // returned per probed IP. Errors are embedded in each result.
 func (p *Prober) Run(ctx context.Context) []types.ProbeResult {
-	items := probe.ExpandTargets(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs)
-	if len(items) == 0 {
-		return nil
-	}
-
-	results := make([]types.ProbeResult, len(items))
-	var wg sync.WaitGroup
-	for i, item := range items {
-		wg.Add(1)
-		go func(idx int, wi probe.WorkItem) {
-			defer wg.Done()
-			results[idx] = p.probeOne(ctx, wi)
-		}(i, item)
-	}
-	wg.Wait()
-	return results
+	return probe.RunWorkItems(ctx, p.cfg.Targets, p.cfg.MaxResolvedIPs, p.probeOne)
 }
 
 // probeOne pings a single IP and returns a populated ProbeResult.
 func (p *Prober) probeOne(ctx context.Context, wi probe.WorkItem) types.ProbeResult {
-	result := types.ProbeResult{
-		Timestamp: time.Now().UTC(),
-		ProbeName: p.cfg.Name,
-		Target:    wi.IP,
-		FQDN:      wi.FQDN,
-		SourceIP:  p.cfg.SourceIP,
-		ProbeType: "icmp",
-		Labels:    p.cfg.Labels,
-	}
-
-	// If ExpandTargets could not resolve the FQDN (IP == FQDN), emit an error result.
-	if wi.FQDN != "" && wi.IP == wi.FQDN {
-		result.Status = types.StatusError
-		result.ErrorType = "resolve_error"
-		result.ErrorMsg = fmt.Sprintf("resolve target %q: lookup failed", wi.FQDN)
+	result, ok := probe.NewResult(p.cfg, wi, p.Type())
+	if !ok {
 		return result
 	}
 
@@ -109,15 +79,7 @@ func applyStats(result *types.ProbeResult, stats *probing.Statistics) {
 	result.PacketsReceived = stats.PacketsRecv
 	// PacketLoss from pro-bing is a percentage (0–100); convert to ratio (0.0–1.0).
 	result.PacketLossRatio = stats.PacketLoss / 100
-
-	switch {
-	case result.PacketLossRatio == 0:
-		result.Status = types.StatusSuccess
-	case result.PacketLossRatio >= 1:
-		result.Status = types.StatusFailure
-	default:
-		result.Status = types.StatusPartial
-	}
+	result.Status = probe.StatusFromLoss(result.PacketLossRatio)
 
 	// RTT fields are only populated when at least one reply was received; they remain zero otherwise.
 	if stats.PacketsRecv > 0 {
