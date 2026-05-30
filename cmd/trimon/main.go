@@ -24,6 +24,7 @@ import (
 	httpprobe "github.com/gtataranni/trimon/internal/probe/http"
 	icmpprobe "github.com/gtataranni/trimon/internal/probe/icmp"
 	tcpprobe "github.com/gtataranni/trimon/internal/probe/tcp"
+	udpprobe "github.com/gtataranni/trimon/internal/probe/udp"
 	"github.com/gtataranni/trimon/internal/scheduler"
 	"github.com/gtataranni/trimon/internal/server"
 	"github.com/gtataranni/trimon/pkg/types"
@@ -69,6 +70,8 @@ func main() {
 			return icmpprobe.New(probeCfg), nil
 		case types.ProbeTypeTCP:
 			return tcpprobe.New(probeCfg), nil
+		case types.ProbeTypeUDP:
+			return udpprobe.New(probeCfg), nil
 		case types.ProbeTypeHTTP:
 			return httpprobe.New(probeCfg), nil
 		default:

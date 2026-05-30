@@ -21,3 +21,24 @@ probes:
       - "208.67.222.222"
     probe_every: 20s
     count: 8
+
+  # UDP probe (v0.4.0): public DNS resolvers are a reliable public UDP endpoint,
+  # so this doubles as the runtime smoke target. Any reply within the timeout
+  # counts as reachable; a timeout or ICMP port-unreachable is loss. payload is a
+  # raw DNS query for the root NS record, written with YAML \xNN byte escapes
+  # (the bytes are what matter, not a hex string). expected_response is empty, so
+  # any reply = success. For real DNS answer validation, use the dns probe type.
+  - name: dns-udp
+    type: udp
+    targets:
+      - "8.8.8.8"
+      - "1.1.1.1"
+    probe_every: 20s
+    timeout: 2s
+    count: 3
+    packet_interval: 200ms
+    udp:
+      port: 53
+      payload: "\x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01"
+    labels:
+      probe_id: "dns-udp"

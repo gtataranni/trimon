@@ -1124,6 +1124,137 @@ probes:
 	}
 }
 
+func TestUDPProbeConfig(t *testing.T) {
+	baseGlobal := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+		check   func(*testing.T, *Config)
+	}{
+		{
+			name: "valid udp probe is accepted",
+			snippet: `
+  - name: echo
+    type: udp
+    targets: ["127.0.0.1"]
+    udp:
+      port: 7
+      payload: "ping"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].UDP == nil {
+					t.Fatal("UDP config is nil")
+				}
+				if cfg.Probes[0].UDP.Port != 7 {
+					t.Errorf("port: want 7, got %d", cfg.Probes[0].UDP.Port)
+				}
+				if cfg.Probes[0].UDP.Payload != "ping" {
+					t.Errorf("payload: want ping, got %q", cfg.Probes[0].UDP.Payload)
+				}
+			},
+		},
+		{
+			name: "expected_response with payload is accepted",
+			snippet: `
+  - name: udp-match
+    type: udp
+    targets: ["127.0.0.1"]
+    udp:
+      port: 9000
+      payload: "PING"
+      expected_response: "PONG"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].UDP.ExpectedResponse != "PONG" {
+					t.Errorf("expected_response: want PONG, got %q", cfg.Probes[0].UDP.ExpectedResponse)
+				}
+			},
+		},
+		{
+			name: "empty payload is accepted",
+			snippet: `
+  - name: udp-empty
+    type: udp
+    targets: ["127.0.0.1"]
+    udp:
+      port: 7
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].UDP.Payload != "" {
+					t.Errorf("payload: want empty, got %q", cfg.Probes[0].UDP.Payload)
+				}
+			},
+		},
+		{
+			name: "missing udp block is rejected",
+			snippet: `
+  - name: no-udp-block
+    type: udp
+    targets: ["127.0.0.1"]
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing port is rejected",
+			snippet: `
+  - name: no-port
+    type: udp
+    targets: ["127.0.0.1"]
+    udp: {}
+`,
+			wantErr: true,
+		},
+		{
+			name: "port out of range is rejected",
+			snippet: `
+  - name: big-port
+    type: udp
+    targets: ["127.0.0.1"]
+    udp:
+      port: 70000
+`,
+			wantErr: true,
+		},
+		{
+			name: "expected_response without payload is rejected",
+			snippet: `
+  - name: expected-no-payload
+    type: udp
+    targets: ["127.0.0.1"]
+    udp:
+      port: 53
+      expected_response: "cafe"
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parse([]byte(minValidOpsYAML), []byte(baseGlobal+tc.snippet))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.check != nil {
+				tc.check(t, cfg)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "*.yaml")

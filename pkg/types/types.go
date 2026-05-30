@@ -8,6 +8,7 @@ type Status string
 const (
 	ProbeTypeICMP = "icmp"
 	ProbeTypeTCP  = "tcp"
+	ProbeTypeUDP  = "udp"
 	ProbeTypeHTTP = "http"
 
 	StatusSuccess Status = "success" // 0% packet loss
@@ -48,6 +49,15 @@ type TCPConfig struct {
 	Mode string // "connect" (default) or "syn"
 }
 
+// UDPConfig holds UDP probe parameters. Payload and ExpectedResponse are sent
+// and matched as raw bytes; use YAML \xNN escapes for non-printable/binary data
+// (e.g. payload: "\x00\x01").
+type UDPConfig struct {
+	Port             int    // required; 1–65535
+	Payload          string // bytes to send; empty = zero-length datagram
+	ExpectedResponse string // reply must start with these bytes; empty = any reply counts as success
+}
+
 // ProbeConfig is the merged, validated probe configuration built by internal/config.
 type ProbeConfig struct {
 	Name           string
@@ -62,6 +72,7 @@ type ProbeConfig struct {
 	Labels         map[string]string
 	HTTP           *HTTPConfig
 	TCP            *TCPConfig
+	UDP            *UDPConfig
 }
 
 // ProbeResult is the output of a single probe run against one IP target.
@@ -85,10 +96,10 @@ type ProbeResult struct {
 	// Set by single-request probes (e.g. HTTP); zero for multi-packet probes.
 	DurationMS      float64 `json:"duration_ms,omitempty"`
 	PacketLossRatio float64 `json:"packet_loss"`
-	// PortOpen is the TCP port reachability state, set only by TCP probes.
-	// nil   = not applicable (non-TCP probe, or probe could not run / status=error)
-	// true  = port open  (SYN/ACK received)
-	// false = port not open (RST/closed, or no reply at all)
+	// PortOpen is the port reachability state, set by TCP and UDP probes.
+	// nil   = not applicable (other probe type, or probe could not run / status=error)
+	// true  = port open  (TCP SYN/ACK, or a matching UDP reply)
+	// false = port not open (TCP RST / UDP ICMP port-unreachable, or no reply at all)
 	// Combine with probe.up to distinguish closed (up=1) from filtered/down (up=0).
 	PortOpen  *bool             `json:"port_open,omitempty"`
 	Status    Status            `json:"status"`

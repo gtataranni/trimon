@@ -44,7 +44,7 @@ type Exporter struct {
 	rttMin, rttMean, rttMax, rttStddev metric.Float64Gauge
 	packetLoss                         metric.Float64Gauge
 	httpDuration                       metric.Float64Gauge
-	tcpPortOpen                        metric.Float64Gauge
+	portOpen                           metric.Float64Gauge
 	pktSent                            metric.Int64Counter
 	pktReceived                        metric.Int64Counter
 	success                            metric.Int64Gauge
@@ -181,7 +181,7 @@ func (e *Exporter) registerInstruments(meter metric.Meter, version, commit strin
 	if err != nil {
 		return err
 	}
-	e.tcpPortOpen, err = meter.Float64Gauge("trimon.probe.tcp.port_open")
+	e.portOpen, err = meter.Float64Gauge("trimon.probe.port_open")
 	if err != nil {
 		return err
 	}
@@ -317,15 +317,16 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		httpDuration = r.DurationMS
 	}
 
-	// TCP port_open: 1 if the port answered with SYN/ACK (open), 0 if reachable
-	// but closed or no reply, NaN for non-TCP probes or when the probe errored
+	// port_open: 1 if the port is open (TCP SYN/ACK or a matching UDP reply), 0 if
+	// reachable but closed (TCP RST / UDP ICMP port-unreachable) or only silence,
+	// NaN when not applicable — non-TCP/UDP probes, or any probe that errored
 	// (PortOpen left nil). Combine with probe.up to tell closed from filtered/down.
-	tcpPortOpen := math.NaN()
-	if r.ProbeType == types.ProbeTypeTCP && r.PortOpen != nil {
+	portOpen := math.NaN()
+	if r.PortOpen != nil {
 		if *r.PortOpen {
-			tcpPortOpen = 1
+			portOpen = 1
 		} else {
-			tcpPortOpen = 0
+			portOpen = 0
 		}
 	}
 
@@ -337,7 +338,7 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 	e.success.Record(ctx, successVal, probeAttrs)
 	e.probeUp.Record(ctx, upVal, probeAttrs)
 	e.httpDuration.Record(ctx, httpDuration, probeAttrs)
-	e.tcpPortOpen.Record(ctx, tcpPortOpen, probeAttrs)
+	e.portOpen.Record(ctx, portOpen, probeAttrs)
 
 	return nil
 }

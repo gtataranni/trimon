@@ -100,6 +100,13 @@ type rawTCPConfig struct {
 	Mode string `yaml:"mode"`
 }
 
+// rawUDPConfig is the YAML shape for UDP probe parameters.
+type rawUDPConfig struct {
+	Port             int    `yaml:"port"`
+	Payload          string `yaml:"payload"`
+	ExpectedResponse string `yaml:"expected_response"`
+}
+
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
@@ -114,6 +121,7 @@ type rawProbeConfig struct {
 	Labels         map[string]string `yaml:"labels"`
 	HTTP           *rawHTTPConfig    `yaml:"http"`
 	TCP            *rawTCPConfig     `yaml:"tcp"`
+	UDP            *rawUDPConfig     `yaml:"udp"`
 }
 
 // Duration is a yaml-decodable wrapper around time.Duration.
@@ -155,6 +163,7 @@ type Config struct {
 
 var knownProbeTypes = map[string]bool{
 	types.ProbeTypeICMP: true, types.ProbeTypeHTTP: true, types.ProbeTypeTCP: true,
+	types.ProbeTypeUDP: true,
 }
 
 // localInterfaceAddrs returns the list of unicast addresses assigned to local interfaces.
@@ -417,6 +426,18 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			}
 		}
 
+		var udpCfg *types.UDPConfig
+		if r.Type == types.ProbeTypeUDP {
+			if r.UDP == nil {
+				return nil, fmt.Errorf("probe %q: udp config block is required for type \"udp\"", r.Name)
+			}
+			var err error
+			udpCfg, err = validateUDPConfig(r.UDP)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+		}
+
 		labels := r.Labels
 		for k, v := range labels {
 			if !labelKeyRE.MatchString(k) {
@@ -440,6 +461,7 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			Labels:         labels,
 			HTTP:           httpCfg,
 			TCP:            tcpCfg,
+			UDP:            udpCfg,
 		})
 	}
 	return out, nil
@@ -526,6 +548,19 @@ func validateTCPConfig(r *rawTCPConfig) (*types.TCPConfig, error) {
 		return nil, fmt.Errorf("tcp.mode must be %q or %q, got %q", types.TCPModeConnect, types.TCPModeSYN, r.Mode)
 	}
 	return &types.TCPConfig{Port: r.Port, Mode: mode}, nil
+}
+
+// validateUDPConfig validates a rawUDPConfig, returning the typed config on success.
+// Payload and ExpectedResponse are raw byte strings; ExpectedResponse without a
+// payload is rejected (there is nothing to elicit the expected reply).
+func validateUDPConfig(r *rawUDPConfig) (*types.UDPConfig, error) {
+	if r.Port < 1 || r.Port > 65535 {
+		return nil, fmt.Errorf("udp.port must be in [1, 65535], got %d", r.Port)
+	}
+	if r.ExpectedResponse != "" && r.Payload == "" {
+		return nil, errors.New("udp.expected_response requires a non-empty udp.payload")
+	}
+	return &types.UDPConfig{Port: r.Port, Payload: r.Payload, ExpectedResponse: r.ExpectedResponse}, nil
 }
 
 // validateOneTarget checks that entry is either a valid IP or a resolvable hostname.
