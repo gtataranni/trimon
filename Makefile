@@ -8,7 +8,7 @@ TAG      ?= $(VERSION)
 # Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=docker
 CONTAINER_RUNTIME ?= podman
 
-.PHONY: build test lint container docker podman clean release dev-stack dev-stack-down
+.PHONY: build test lint container docker podman clean release dev-stack demo dev-stack-down
 
 ## build: compile the trimon binary into ./bin/
 build:
@@ -50,11 +50,27 @@ release:
 clean:
 	rm -rf bin/
 
-## dev-stack: build trimon and start the full observability stack (trimon, OTel Collector, Prometheus, Grafana)
+## dev-stack: build trimon and start the lean runtime (trimon + OTel Collector).
+##            This is the probe smoke/runtime harness. Add the demo viz layer
+##            (Prometheus + Grafana) with `make demo`.
 dev-stack:
 	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml up --build -d
 	@echo ""
-	@echo "Dev stack is up:"
+	@echo "Dev stack (runtime) is up:"
+	@echo "  trimon /metrics   http://localhost:8080/metrics"
+	@echo "  trimon /healthz   http://localhost:8080/healthz"
+	@echo "  otelcol /metrics  http://localhost:8889/metrics   (OTLP push, re-exposed)"
+	@echo "  OTLP gRPC         localhost:4317"
+	@echo "  OTLP HTTP         http://localhost:4318"
+	@echo ""
+	@echo "  probe stdout:     $(CONTAINER_RUNTIME) logs -f trimon-dev"
+	@echo "  add Grafana:      make demo"
+
+## demo: start the full observability stack (trimon, OTel Collector, Prometheus, Grafana)
+demo:
+	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml --profile demo up --build -d
+	@echo ""
+	@echo "Demo stack is up:"
 	@echo "  trimon /metrics  http://localhost:8080/metrics"
 	@echo "  trimon /healthz  http://localhost:8080/healthz"
 	@echo "  Grafana          http://localhost:3000  (admin/admin)"
@@ -62,6 +78,6 @@ dev-stack:
 	@echo "  OTLP gRPC        localhost:4317"
 	@echo "  OTLP HTTP        http://localhost:4318"
 
-## dev-stack-down: stop the local observability stack and remove volumes
+## dev-stack-down: stop the local stack (runtime and demo) and remove volumes
 dev-stack-down:
-	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml down -v
+	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml --profile demo down -v

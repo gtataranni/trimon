@@ -32,6 +32,10 @@ services:
       - observability
 
   prometheus:
+    # Visualization layer: only started with the "demo" profile (make demo).
+    # The lean runtime (make dev-stack) verifies probes via trimon /metrics and
+    # the collector's re-exposed :8889 endpoint, so Prometheus is not required.
+    profiles: ["demo"]
     image: prom/prometheus:v2.53.0
     container_name: prometheus-dev-stack
     volumes:
@@ -45,6 +49,8 @@ services:
       - observability
 
   grafana:
+    # Visualization layer: only started with the "demo" profile (make demo).
+    profiles: ["demo"]
     image: grafana/grafana:11.1.0
     container_name: grafana-dev-stack
     environment:
