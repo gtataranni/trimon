@@ -9,6 +9,7 @@ const (
 	ProbeTypeICMP = "icmp"
 	ProbeTypeTCP  = "tcp"
 	ProbeTypeUDP  = "udp"
+	ProbeTypeDNS  = "dns"
 	ProbeTypeHTTP = "http"
 
 	StatusSuccess Status = "success" // 0% packet loss
@@ -58,6 +59,13 @@ type UDPConfig struct {
 	ExpectedResponse string // reply must start with these bytes; empty = any reply counts as success
 }
 
+// DNSConfig holds DNS probe parameters.
+type DNSConfig struct {
+	RecordType     string   // "A"|"AAAA"|"CNAME"|"MX"|"TXT"; default "A"
+	Resolver       string   // optional "host:port"; empty = system resolver (/etc/resolv.conf)
+	ExpectedAnswer []string // at least one answer must match (case-insensitive); empty = any reply counts
+}
+
 // ProbeConfig is the merged, validated probe configuration built by internal/config.
 type ProbeConfig struct {
 	Name           string
@@ -73,6 +81,7 @@ type ProbeConfig struct {
 	HTTP           *HTTPConfig
 	TCP            *TCPConfig
 	UDP            *UDPConfig
+	DNS            *DNSConfig
 }
 
 // ProbeResult is the output of a single probe run against one IP target.

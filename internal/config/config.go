@@ -107,6 +107,13 @@ type rawUDPConfig struct {
 	ExpectedResponse string `yaml:"expected_response"`
 }
 
+// rawDNSConfig is the YAML shape for DNS probe parameters.
+type rawDNSConfig struct {
+	RecordType     string   `yaml:"record_type"`
+	Resolver       string   `yaml:"resolver"`
+	ExpectedAnswer []string `yaml:"expected_answer"`
+}
+
 // rawProbeConfig mirrors the YAML shape before merging globals.
 type rawProbeConfig struct {
 	Name           string            `yaml:"name"`
@@ -122,6 +129,7 @@ type rawProbeConfig struct {
 	HTTP           *rawHTTPConfig    `yaml:"http"`
 	TCP            *rawTCPConfig     `yaml:"tcp"`
 	UDP            *rawUDPConfig     `yaml:"udp"`
+	DNS            *rawDNSConfig     `yaml:"dns"`
 }
 
 // Duration is a yaml-decodable wrapper around time.Duration.
@@ -163,7 +171,7 @@ type Config struct {
 
 var knownProbeTypes = map[string]bool{
 	types.ProbeTypeICMP: true, types.ProbeTypeHTTP: true, types.ProbeTypeTCP: true,
-	types.ProbeTypeUDP: true,
+	types.ProbeTypeUDP: true, types.ProbeTypeDNS: true,
 }
 
 // localInterfaceAddrs returns the list of unicast addresses assigned to local interfaces.
@@ -352,7 +360,13 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			return nil, fmt.Errorf("probe %q: targets is required and must have at least one entry", r.Name)
 		}
 		for _, t := range r.Targets {
-			if err := validateOneTarget(t); err != nil {
+			// DNS targets are query names, not hosts to connect to, so they must
+			// not be resolved at load time (NXDOMAIN targets are valid).
+			validate := validateOneTarget
+			if r.Type == types.ProbeTypeDNS {
+				validate = validateDNSQueryName
+			}
+			if err := validate(t); err != nil {
 				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
 			}
 		}
@@ -438,6 +452,18 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			}
 		}
 
+		var dnsCfg *types.DNSConfig
+		if r.Type == types.ProbeTypeDNS {
+			if r.DNS == nil {
+				return nil, fmt.Errorf("probe %q: dns config block is required for type \"dns\"", r.Name)
+			}
+			var err error
+			dnsCfg, err = validateDNSConfig(r.DNS)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q: %w", r.Name, err)
+			}
+		}
+
 		labels := r.Labels
 		for k, v := range labels {
 			if !labelKeyRE.MatchString(k) {
@@ -462,6 +488,7 @@ func mergeAndValidateProbes(raws []rawProbeConfig, global GlobalConfig) ([]types
 			HTTP:           httpCfg,
 			TCP:            tcpCfg,
 			UDP:            udpCfg,
+			DNS:            dnsCfg,
 		})
 	}
 	return out, nil
@@ -561,6 +588,41 @@ func validateUDPConfig(r *rawUDPConfig) (*types.UDPConfig, error) {
 		return nil, errors.New("udp.expected_response requires a non-empty udp.payload")
 	}
 	return &types.UDPConfig{Port: r.Port, Payload: r.Payload, ExpectedResponse: r.ExpectedResponse}, nil
+}
+
+// dnsRecordTypes is the set of supported DNS record types (upper-cased).
+var dnsRecordTypes = map[string]bool{"A": true, "AAAA": true, "CNAME": true, "MX": true, "TXT": true}
+
+// validateDNSConfig validates a rawDNSConfig and applies defaults, returning the
+// typed config on success. RecordType defaults to "A"; Resolver, when set, must
+// be a valid host:port.
+func validateDNSConfig(r *rawDNSConfig) (*types.DNSConfig, error) {
+	recordType := "A"
+	if r.RecordType != "" {
+		recordType = strings.ToUpper(r.RecordType)
+		if !dnsRecordTypes[recordType] {
+			return nil, fmt.Errorf("dns.record_type must be one of A, AAAA, CNAME, MX, TXT, got %q", r.RecordType)
+		}
+	}
+	if r.Resolver != "" {
+		if _, err := net.ResolveTCPAddr("tcp", r.Resolver); err != nil {
+			return nil, fmt.Errorf("dns.resolver must be a valid host:port: %w", err)
+		}
+	}
+	return &types.DNSConfig{RecordType: recordType, Resolver: r.Resolver, ExpectedAnswer: r.ExpectedAnswer}, nil
+}
+
+// validateDNSQueryName checks a DNS query name syntactically without resolving
+// it, so NXDOMAIN targets remain valid. It rejects only empty names and names
+// containing whitespace.
+func validateDNSQueryName(entry string) error {
+	if entry == "" {
+		return errors.New("dns target query name must not be empty")
+	}
+	if strings.ContainsAny(entry, " \t\r\n") {
+		return fmt.Errorf("dns target query name %q must not contain whitespace", entry)
+	}
+	return nil
 }
 
 // validateOneTarget checks that entry is either a valid IP or a resolvable hostname.

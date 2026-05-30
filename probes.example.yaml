@@ -178,3 +178,41 @@ probes:
       expected_response: "PONG"
     labels:
       service: app-health
+
+  # DNS probe: query a name and measure resolver round-trip time. An attempt is
+  # received when the resolver answers before the timeout with NOERROR (or
+  # NXDOMAIN when no expected_answer is set); a timeout, SERVFAIL/REFUSED, or an
+  # answer that doesn't match expected_answer is loss (status=failure). Targets
+  # are query names (not resolved at load time, so NXDOMAIN names are allowed).
+  # Count/packet_interval control how many queries are made per tick.
+  - name: dns-resolve-google
+    type: dns
+    targets:
+      - "dns.google"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 1s
+    dns:
+      record_type: A
+      expected_answer:        # at least one must match (case-insensitive)
+        - "8.8.8.8"
+        - "8.8.4.4"
+    labels:
+      service: dns
+
+  # DNS probe against a specific resolver (host:port). With no expected_answer,
+  # any NOERROR/NXDOMAIN reply counts as success — i.e. a resolver liveness check.
+  - name: dns-resolver-health
+    type: dns
+    targets:
+      - "example.com"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 1s
+    dns:
+      record_type: A
+      resolver: "1.1.1.1:53"
+    labels:
+      service: dns-health

@@ -1255,6 +1255,169 @@ probes:
 	}
 }
 
+func TestDNSProbeConfig(t *testing.T) {
+	baseGlobal := `
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+probes:
+`
+	cases := []struct {
+		name    string
+		snippet string
+		wantErr bool
+		check   func(*testing.T, *Config)
+	}{
+		{
+			name: "valid dns probe is accepted with defaults",
+			snippet: `
+  - name: lookup
+    type: dns
+    targets: ["example.com"]
+    dns:
+      record_type: A
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].DNS == nil {
+					t.Fatal("DNS config is nil")
+				}
+				if cfg.Probes[0].DNS.RecordType != "A" {
+					t.Errorf("record_type: want A, got %q", cfg.Probes[0].DNS.RecordType)
+				}
+			},
+		},
+		{
+			name: "record_type defaults to A when omitted",
+			snippet: `
+  - name: no-rtype
+    type: dns
+    targets: ["example.com"]
+    dns: {}
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].DNS.RecordType != "A" {
+					t.Errorf("record_type: want default A, got %q", cfg.Probes[0].DNS.RecordType)
+				}
+			},
+		},
+		{
+			name: "lowercase record_type is normalized to upper",
+			snippet: `
+  - name: aaaa
+    type: dns
+    targets: ["example.com"]
+    dns:
+      record_type: aaaa
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].DNS.RecordType != "AAAA" {
+					t.Errorf("record_type: want AAAA, got %q", cfg.Probes[0].DNS.RecordType)
+				}
+			},
+		},
+		{
+			name: "resolver and expected_answer are accepted",
+			snippet: `
+  - name: custom-resolver
+    type: dns
+    targets: ["example.com"]
+    dns:
+      record_type: A
+      resolver: "8.8.8.8:53"
+      expected_answer: ["1.2.3.4", "5.6.7.8"]
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Probes[0].DNS.Resolver != "8.8.8.8:53" {
+					t.Errorf("resolver: want 8.8.8.8:53, got %q", cfg.Probes[0].DNS.Resolver)
+				}
+				if len(cfg.Probes[0].DNS.ExpectedAnswer) != 2 {
+					t.Errorf("expected_answer: want 2 entries, got %d", len(cfg.Probes[0].DNS.ExpectedAnswer))
+				}
+			},
+		},
+		{
+			name: "NXDOMAIN target is accepted (no load-time resolution)",
+			snippet: `
+  - name: nxdomain
+    type: dns
+    targets: ["does-not-exist.invalid"]
+    dns:
+      record_type: A
+`,
+		},
+		{
+			name: "invalid record_type is rejected",
+			snippet: `
+  - name: bad-rtype
+    type: dns
+    targets: ["example.com"]
+    dns:
+      record_type: SRV
+`,
+			wantErr: true,
+		},
+		{
+			name: "resolver without a port is rejected",
+			snippet: `
+  - name: bad-resolver
+    type: dns
+    targets: ["example.com"]
+    dns:
+      resolver: "8.8.8.8"
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing dns block is rejected",
+			snippet: `
+  - name: no-dns-block
+    type: dns
+    targets: ["example.com"]
+`,
+			wantErr: true,
+		},
+		{
+			name: "empty target is rejected",
+			snippet: `
+  - name: empty-target
+    type: dns
+    targets: [""]
+    dns: {}
+`,
+			wantErr: true,
+		},
+		{
+			name: "whitespace in target is rejected",
+			snippet: `
+  - name: ws-target
+    type: dns
+    targets: ["bad name.com"]
+    dns: {}
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parse([]byte(minValidOpsYAML), []byte(baseGlobal+tc.snippet))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.check != nil {
+				tc.check(t, cfg)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "*.yaml")

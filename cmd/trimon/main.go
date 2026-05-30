@@ -22,6 +22,7 @@ import (
 	"github.com/gtataranni/trimon/internal/pipeline"
 	"github.com/gtataranni/trimon/internal/probe"
 	httpprobe "github.com/gtataranni/trimon/internal/probe/http"
+	dnsprobe "github.com/gtataranni/trimon/internal/probe/dns"
 	icmpprobe "github.com/gtataranni/trimon/internal/probe/icmp"
 	tcpprobe "github.com/gtataranni/trimon/internal/probe/tcp"
 	udpprobe "github.com/gtataranni/trimon/internal/probe/udp"
@@ -72,6 +73,8 @@ func main() {
 			return tcpprobe.New(probeCfg), nil
 		case types.ProbeTypeUDP:
 			return udpprobe.New(probeCfg), nil
+		case types.ProbeTypeDNS:
+			return dnsprobe.New(probeCfg), nil
 		case types.ProbeTypeHTTP:
 			return httpprobe.New(probeCfg), nil
 		default:
