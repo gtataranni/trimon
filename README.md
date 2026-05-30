@@ -4,6 +4,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://golang.org/)
+[![Platform](https://img.shields.io/badge/platform-Linux-orange.svg)](#requirements)
 
 trimon is an open-source, push-based multi-protocol IP target monitoring daemon that exports results to the OpenTelemetry stack. It is particularly useful in multi-line environments and SD-WAN setups where routing agents need continuous per-interface latency signals — not scrape-triggered snapshots. Pull-based tools like blackbox_exporter only measure when scraped, creating gaps between scrape intervals. trimon pushes results continuously from each source IP, running one goroutine per probe on its own configurable schedule.
 
@@ -143,6 +144,11 @@ collector simultaneously.
 ---
 
 ## Requirements
+
+trimon runs on Linux only. macOS, Windows, and other platforms are out of scope for
+now: ICMP and per-probe source-IP binding rely on Linux raw sockets and capabilities. You
+can still develop on a non-Linux host by building and running in a container
+(`make container`, `make dev-stack`), but the deployment target is Linux.
 
 ### CAP_NET_RAW (Linux)
 

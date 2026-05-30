@@ -107,5 +107,6 @@ Goal: the things that needed everything else to be solid first.
 - Business-domain labels (customer, site, SLA tier — handled by downstream label enrichment)
 - Storage backend / time-series DB
 - Web UI
+- Non-Linux runtime targets (macOS, Windows, *BSD) — trimon is Linux-only for now; non-Linux hosts are supported for development via containers only
 
 If a request lands here, push back and explain why it belongs in the consumer side of the OTel stack, not in trimon.

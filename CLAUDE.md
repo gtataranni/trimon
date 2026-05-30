@@ -13,7 +13,7 @@ It differs from `blackbox_exporter` in one key way: trimon runs an internal sche
 
 - **Language:** Go 1.22+
 - **No CGO** — pure Go only
-- **Linux-first** — ICMP requires raw sockets and `CAP_NET_RAW`
+- **Linux-only** — the runtime target is Linux (ICMP needs raw sockets / `CAP_NET_RAW`). macOS, Windows, and other OSes are out of scope for now; develop on non-Linux hosts via containers (see [Makefile](Makefile)), but do not add platform-specific support for them
 - **Module path:** `github.com/<handle>/trimon` (set once, do not refactor)
 - **License:** Apache 2.0
 - Use KISS and DRY principles, alongside Go best practices
