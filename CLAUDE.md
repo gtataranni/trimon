@@ -17,7 +17,6 @@ It differs from `blackbox_exporter` in one key way: trimon runs an internal sche
 - **Module path:** `github.com/<handle>/trimon` (set once, do not refactor)
 - **License:** Apache 2.0
 - Use KISS and DRY principles, alongside Go best practices
-- Updates to this file are allowed but need to be confirmed by user
 
 ### Core dependencies (keep this list small)
 - `golang.org/x/net/icmp` — raw ICMP
@@ -187,4 +186,3 @@ Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR
 
 1. Re-read the relevant interface in `internal/probe/prober.go` or `internal/exporter/exporter.go`.
 2. Check [TASKS.md](TASKS.md) for the active backlog; check [ROADMAP.md](ROADMAP.md) for phase scope — if the task isn't in the current phase, it's probably out of scope.
-3. Research pros/cons, best practices and solutions from other popular project for an informed decision, then ask the user.
