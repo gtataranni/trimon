@@ -63,10 +63,10 @@ The area is considered reachable based on the probe result of all targets in the
 
 Goal: trimon becomes genuinely multi-protocol.
 
-- [ ] TCP connect probe (`internal/probe/tcp`) — connect-time, source port label
-- [ ] UDP probe (`internal/probe/udp`) — send/recv with expected response patterns
-- [ ] DNS probe (`internal/probe/dns`) — A/AAAA/CNAME, resolver override, expected answer match
-- [ ] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
+- [x] TCP connect probe (`internal/probe/tcp`) — connect-time, source port label
+- [x] UDP probe (`internal/probe/udp`) — send/recv with expected response patterns
+- [x] DNS probe (`internal/probe/dns`) — A/AAAA/CNAME, resolver override, expected answer match
+- [x] HTTP/HTTPS probe (`internal/probe/http`) — status code match, response time, TLS expiry
 - [ ] Per-protocol config schema additions, validated by the config loader
 - [ ] Simple MQTT exporter (`internal/exporter/mqtt`) — publish probe results to an MQTT broker
 - [ ] Consider implementing OPT-13 Unify probe timeout through context; remove pinger.Timeout from ICMP prober.
