@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "trimon probe monitoring overview",
+  "description": "trimon multi-protocol probe monitoring: ICMP, TCP, UDP, DNS, HTTP",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -26,6 +26,189 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "Area-level reachability per probe: 1 (UP) if any target replied in the last run, else 0 (DOWN). PromQL: max by (probe_name)(trimon_probe_up).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "UP"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "max by (probe_name) (trimon_probe_up)",
+          "instant": true,
+          "legendFormat": "{{probe_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Area reachability",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Per-target reachability over time (1 = at least one reply, 0 = no reply). Each resolved IP is its own series.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "trimon_probe_up",
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Probe up — per target",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Mean round-trip time across the attempts in each run. ICMP/TCP/UDP/DNS only — HTTP reports a single-request duration instead (next row).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -70,10 +253,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -83,11 +262,11 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 0
+        "y": 6
       },
-      "id": 1,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [
@@ -110,12 +289,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "trimon_probe_rtt_mean_milliseconds",
-          "legendFormat": "{{probe_name}}",
+          "editorMode": "code",
+          "expr": "trimon_probe_rtt_mean_milliseconds{probe_type!=\"http\"}",
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "RTT Mean",
+      "title": "RTT — mean",
       "type": "timeseries"
     },
     {
@@ -123,6 +304,210 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "Best/worst round-trip per run — the jitter band. ICMP/TCP/UDP/DNS only.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "trimon_probe_rtt_min_milliseconds{probe_type!=\"http\"}",
+          "legendFormat": "{{probe_name}} · {{probe_target}} min",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "trimon_probe_rtt_max_milliseconds{probe_type!=\"http\"}",
+          "legendFormat": "{{probe_name}} · {{probe_target}} max",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "RTT — min / max",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "HTTP single-request wall-clock time (DNS + TCP + TLS + TTFB + body). HTTP probes only.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "trimon_probe_duration_milliseconds{probe_type=\"http\"}",
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP request duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Fraction of attempts with no reply in the last run. 0 = success, 1 = total loss, NaN = probe errored (line breaks).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -187,10 +572,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 8
+        "x": 12,
+        "y": 14
       },
-      "id": 2,
+      "id": 6,
       "options": {
         "legend": {
           "calcs": [
@@ -215,12 +600,12 @@
           },
           "editorMode": "code",
           "expr": "trimon_probe_packet_loss_ratio",
-          "legendFormat": "{{probe_name}}",
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Packet Loss",
+      "title": "Packet loss",
       "type": "timeseries"
     },
     {
@@ -228,6 +613,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "TCP & UDP port reachability. OPEN = SYN/ACK or matching reply (port_open=1). CLOSED = RST / ICMP port-unreachable — host reachable, port shut (port_open=0, up=1). A target that is down/filtered (up=0) drops out of this panel; cross-check the reachability panels above.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -237,14 +623,14 @@
             {
               "options": {
                 "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "DOWN"
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "CLOSED"
                 },
                 "1": {
                   "color": "green",
-                  "index": 1,
-                  "text": "UP"
+                  "index": 0,
+                  "text": "OPEN"
                 }
               },
               "type": "value"
@@ -254,7 +640,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "yellow",
                 "value": null
               },
               {
@@ -268,12 +654,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 22
       },
-      "id": 3,
+      "id": 7,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -298,13 +684,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "trimon_probe_success",
+          "editorMode": "code",
+          "expr": "trimon_probe_port_open{probe_type=~\"tcp|udp\"}",
           "instant": true,
-          "legendFormat": "{{probe_name}}",
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
           "refId": "A"
         }
       ],
-      "title": "Probe Status",
+      "title": "Port state — TCP / UDP",
       "type": "stat"
     },
     {
@@ -312,106 +699,86 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "Strict success per target: 1 (OK) only when every attempt got a reply (0% loss). Contrast with Area reachability (up), which is 1 for any partial reply.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "FAIL"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                }
+              },
+              "type": "value"
             }
-          },
-          "mappings": [],
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "green",
+                "value": 1
               }
             ]
           },
-          "unit": "ms"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 16
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 22
       },
-      "id": 4,
+      "id": 8,
       "options": {
-        "legend": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
           "calcs": [
-            "mean",
-            "max",
-            "last"
+            "lastNotNull"
           ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "11.1.0",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "trimon_probe_rtt_min_milliseconds",
-          "legendFormat": "{{probe_name}} min",
+          "editorMode": "code",
+          "expr": "trimon_probe_success",
+          "instant": true,
+          "legendFormat": "{{probe_name}} · {{probe_target}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "trimon_probe_rtt_max_milliseconds",
-          "legendFormat": "{{probe_name}} max",
-          "refId": "B"
         }
       ],
-      "title": "RTT Min / Max",
-      "type": "timeseries"
+      "title": "Probe success (strict)",
+      "type": "stat"
     }
   ],
   "refresh": "10s",
@@ -444,6 +811,6 @@
   "timezone": "browser",
   "title": "Trimon Probes",
   "uid": "trimon-probes",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

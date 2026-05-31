@@ -63,3 +63,42 @@ probes:
         - "8.8.4.4"
     labels:
       probe_id: "dns-resolve"
+
+  # TCP probe (v0.4.0): connect-mode handshake against a reliably-open public
+  # port (HTTPS/443 on the public resolvers). trimon_probe_port_open=1 means open
+  # (SYN/ACK or completed connect); a RST would be port_open=0 with up=1 (host
+  # reachable, port closed); only a timeout is loss (status=failure, up=0).
+  # Doubles as the runtime smoke for the tcp probe type.
+  - name: tcp-https
+    type: tcp
+    targets:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    probe_every: 20s
+    timeout: 2s
+    count: 3
+    packet_interval: 200ms
+    tcp:
+      port: 443
+      mode: connect
+    labels:
+      probe_id: "tcp-https"
+
+  # HTTP probe (v0.4.0): HTTPS GET against a stable public endpoint. Exercises
+  # status-code matching, single-request duration (trimon_probe_duration_milliseconds),
+  # and TLS certificate expiry (status=partial within tls_expiry_warning_days of
+  # expiry, failure once expired). HTTP sends exactly one request per tick, so
+  # count/packet_interval do not apply. Doubles as the runtime smoke for http.
+  - name: http-example
+    type: http
+    targets:
+      - "example.com"
+    probe_every: 20s
+    timeout: 5s
+    http:
+      scheme: https
+      path: /
+      expected_status: 200
+      tls_expiry_warning_days: 14
+    labels:
+      probe_id: "http-example"
