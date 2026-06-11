@@ -172,6 +172,24 @@ make build     # compile binary to ./bin/trimon
 make container # build container image (podman by default)
 ```
 
+### Smoke test
+
+`make smoke` runs an end-to-end check: it builds and starts the lean dev-stack
+(the real Linux binary + OTel Collector) in containers, waits for the trimon HTTP
+server, then runs the Go assertion layer in [test/smoke/](test/smoke/) (build tag
+`smoke`). It verifies that every probe type (ICMP, TCP, UDP, DNS, HTTP) reports a
+reachable target through `/metrics` and that results reach the collector over
+OTLP, before tearing the stack down.
+
+```bash
+make smoke                 # build, run, assert, tear down
+make smoke ARGS="--keep"   # leave the stack running for inspection
+```
+
+It needs a container runtime (podman by default; `make smoke ARGS="--runtime docker"`)
+and outbound network, since the demo probes hit public targets. The `smoke` tag
+keeps these tests out of `make test`.
+
 ### Releasing
 
 ```bash

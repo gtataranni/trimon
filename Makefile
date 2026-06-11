@@ -8,7 +8,7 @@ TAG      ?= $(VERSION)
 # Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=docker
 CONTAINER_RUNTIME ?= podman
 
-.PHONY: build test lint container docker podman clean release dev-stack demo dev-stack-down
+.PHONY: build test lint container docker podman clean release dev-stack demo dev-stack-down smoke
 
 ## build: compile the trimon binary into ./bin/
 build:
@@ -81,3 +81,10 @@ demo:
 ## dev-stack-down: stop the local stack (runtime and demo) and remove volumes
 dev-stack-down:
 	$(CONTAINER_RUNTIME) compose -f examples/local-stack/docker-compose.yml --profile demo down -v
+
+## smoke: end-to-end smoke test — build+start the dev-stack, assert every probe
+##        type reports through /metrics and reaches the collector, then tear down.
+##        Needs outbound network (probes hit public targets). Pass flags through:
+##        make smoke ARGS="--keep"
+smoke:
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) ./scripts/smoke.sh $(ARGS)
