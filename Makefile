@@ -5,8 +5,8 @@ LDFLAGS  := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)"
 IMAGE    ?= trimon
 TAG      ?= $(VERSION)
 
-# Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=docker
-CONTAINER_RUNTIME ?= podman
+# Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=podman
+CONTAINER_RUNTIME ?= docker
 
 .PHONY: build test lint container docker podman clean release dev-stack demo dev-stack-down smoke
 
@@ -22,7 +22,7 @@ test:
 lint:
 	golangci-lint run ./...
 
-## container: build the container image using CONTAINER_RUNTIME (default: podman)
+## container: build the container image using CONTAINER_RUNTIME (default: docker)
 ##            examples: make container
 ##                      make container CONTAINER_RUNTIME=docker
 container:

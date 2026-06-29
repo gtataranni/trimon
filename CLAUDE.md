@@ -91,7 +91,7 @@ trimon/
 make build       # build ./bin/trimon
 make test        # go test ./... with race detector
 make lint        # golangci-lint run
-make container   # build container image (podman by default)
+make container   # build container image
 make release V=vX.Y.Z  # tag and build a release
 
 ./bin/trimon --config config.example.yaml --log-level debug

@@ -18,7 +18,7 @@
 #
 #   --keep                 leave the stack running on exit (for debugging)
 #   --no-build             skip the image rebuild (reuse the existing image)
-#   --runtime <r>          container runtime (default: $CONTAINER_RUNTIME or podman)
+#   --runtime <r>          container runtime (default: $CONTAINER_RUNTIME or docker)
 #
 # Env overrides honored by the Go layer:
 #   TRIMON_BASE_URL, OTELCOL_METRICS_URL, SMOKE_TIMEOUT
@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$ROOT/examples/local-stack/docker-compose.yml"
 
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+RUNTIME="${CONTAINER_RUNTIME:-docker}"
 KEEP=0
 BUILD_ARG="--build"
 HEALTHZ_URL="${TRIMON_BASE_URL:-http://localhost:8080}/healthz"

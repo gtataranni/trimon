@@ -169,7 +169,7 @@ Without this, probes report `status: error` with
 make test      # run unit tests with race detector
 make lint      # run golangci-lint
 make build     # compile binary to ./bin/trimon
-make container # build container image (podman by default)
+make container # build container image
 ```
 
 ### Smoke test
@@ -186,7 +186,7 @@ make smoke                 # build, run, assert, tear down
 make smoke ARGS="--keep"   # leave the stack running for inspection
 ```
 
-It needs a container runtime (podman by default; `make smoke ARGS="--runtime docker"`)
+It needs a container runtime (docker by default; use e.g. `make smoke ARGS="--runtime podman"` to change)
 and outbound network, since the demo probes hit public targets. The `smoke` tag
 keeps these tests out of `make test`.
 
