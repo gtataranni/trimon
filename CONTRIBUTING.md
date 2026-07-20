@@ -121,9 +121,11 @@ distinct.
 ### Metrics and label cardinality
 
 Metrics are defined once via the OTel SDK in `internal/exporter/otlp/otlp.go` and exposed
-on `/metrics` through the Prometheus bridge. The instrument spec lives in
-[docs/metrics.md](docs/metrics.md) and the rationale in the [ADRs](docs/adr/) — read them
-before adding or changing a metric. In
+on `/metrics` through the Prometheus bridge. The instrument spec in
+[docs/metrics.md](docs/metrics.md) is **generated** from that file — after adding, removing,
+or renaming an instrument, run `make gen-docs` and commit the result; CI fails if the doc
+drifts. The rationale for metric design choices lives in the [ADRs](docs/adr/) — read them
+before changing a metric's behavior. In
 particular: **never put per-run or high-churn values** (ephemeral ports, IDs, timestamps,
 measured latencies, drifting counters) into `ProbeResult.Labels` — every label becomes a
 metric attribute on every series and creates an unbounded cardinality leak. A value may be
@@ -206,6 +208,7 @@ responsible for everything you submit, including the DCO sign-off.
 - [ ] `make lint` passes and code is `gofmt`-clean
 - [ ] Tests added/updated for the changed behavior (and for the required packages above)
 - [ ] Docs updated ([README](README.md), [docs/](docs/)) if behavior, config, or metrics changed
+— [ ] run `make gen-docs` after an instrument change
 - [ ] Commits are conventional and **signed off** (`git commit -s`)
 - [ ] Change stays within the current roadmap phase
 - [ ] If you touched the `Prober` or `Exporter` interface, you flagged it in the PR description
