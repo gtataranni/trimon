@@ -64,30 +64,26 @@ func (e *Exporter) Export(_ context.Context, r types.ProbeResult) error {
 func (e *Exporter) Close() error { return nil }
 
 func (e *Exporter) writeJSON(r types.ProbeResult) error {
+	m := r.Measured()
 	rec := jsonRecord{
-		TS:        r.Timestamp.UTC().Format(time.RFC3339),
-		Probe:     r.ProbeName,
-		Type:      r.ProbeType,
-		Target:    r.Target,
-		FQDN:      r.FQDN,
-		SourceIP:  r.SourceIP,
-		Status:    string(r.Status),
-		ErrorMsg:  r.ErrorMsg,
-		ErrorType: r.ErrorType,
-		Labels:    r.Labels,
+		TS:         r.Timestamp.UTC().Format(time.RFC3339),
+		Probe:      r.ProbeName,
+		Type:       r.ProbeType,
+		Target:     r.Target,
+		FQDN:       r.FQDN,
+		SourceIP:   r.SourceIP,
+		Status:     string(r.Status),
+		ErrorMsg:   r.ErrorMsg,
+		ErrorType:  r.ErrorType,
+		Labels:     r.Labels,
+		PacketLoss: m.Loss,
+		DurationMS: m.Duration,
 	}
-	if r.Status != types.StatusError {
-		rec.PacketLoss = &r.PacketLossRatio
-	}
-	if r.ProbeType == types.ProbeTypeHTTP {
-		if r.DurationMS > 0 {
-			rec.DurationMS = &r.DurationMS
-		}
-	} else if r.PacketsReceived > 0 {
-		rec.RTTMeanMS = &r.RTTMeanMS
-		rec.RTTMinMS = &r.RTTMinMS
-		rec.RTTMaxMS = &r.RTTMaxMS
-		rec.RTTStddevMS = &r.RTTStddevMS
+	if m.RTT != nil {
+		rec.RTTMinMS = &m.RTT.MinMS
+		rec.RTTMeanMS = &m.RTT.MeanMS
+		rec.RTTMaxMS = &m.RTT.MaxMS
+		rec.RTTStddevMS = &m.RTT.StddevMS
 	}
 	if rec.Labels == nil {
 		rec.Labels = map[string]string{}
@@ -96,6 +92,7 @@ func (e *Exporter) writeJSON(r types.ProbeResult) error {
 }
 
 func (e *Exporter) writeText(r types.ProbeResult) error {
+	m := r.Measured()
 	errPart := ""
 	if r.ErrorMsg != "" {
 		errPart = fmt.Sprintf(" error=%q", r.ErrorMsg)
@@ -105,8 +102,8 @@ func (e *Exporter) writeText(r types.ProbeResult) error {
 		fqdnText = fmt.Sprintf(" fqdn=%s", r.FQDN)
 	}
 	lossText := ""
-	if r.Status != types.StatusError {
-		lossText = fmt.Sprintf(" loss=%.0f%%", r.PacketLossRatio*100)
+	if m.Loss != nil {
+		lossText = fmt.Sprintf(" loss=%.0f%%", *m.Loss*100)
 	}
 	if r.ProbeType == types.ProbeTypeHTTP {
 		_, err := fmt.Fprintf(e.w,

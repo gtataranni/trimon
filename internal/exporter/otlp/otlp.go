@@ -271,36 +271,10 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 
 	e.probeRuns.Add(ctx, 1, nameAttr)
 
-	var (
-		packetLoss        float64
-		successVal, upVal int64
-	)
-	rttMin, rttMean, rttMax, rttStddev := math.NaN(), math.NaN(), math.NaN(), math.NaN()
-	httpDuration := math.NaN()
-
 	if !r.Status.IsError() {
 		e.pktSent.Add(ctx, int64(r.PacketsSent), probeAttrs)
 		e.pktReceived.Add(ctx, int64(r.PacketsReceived), probeAttrs)
-	}
-
-	switch {
-	case r.Status.IsUp():
-		packetLoss = r.PacketLossRatio
-		upVal = 1
-		if r.Status.IsSuccess() {
-			successVal = 1
-		}
-		// RTT stats: multi-packet probes only (ICMP). HTTP uses DurationMS instead.
-		if r.ProbeType != types.ProbeTypeHTTP {
-			rttMin = r.RTTMinMS
-			rttMean = r.RTTMeanMS
-			rttMax = r.RTTMaxMS
-			rttStddev = r.RTTStddevMS
-		}
-	case r.Status == types.StatusFailure:
-		packetLoss = 1.0
-	case r.Status.IsError():
-		packetLoss = math.NaN()
+	} else {
 		errType := r.ErrorType
 		if errType == "" {
 			errType = "unknown"
@@ -311,36 +285,52 @@ func (e *Exporter) Export(ctx context.Context, r types.ProbeResult) error {
 		))
 	}
 
-	// HTTP duration: emit actual value when a response was received (DurationMS > 0),
-	// NaN otherwise (error, no response, or non-HTTP probe).
-	if r.ProbeType == types.ProbeTypeHTTP && r.DurationMS > 0 {
-		httpDuration = r.DurationMS
+	var successVal, upVal int64
+	if r.Status.IsUp() {
+		upVal = 1
+		if r.Status.IsSuccess() {
+			successVal = 1
+		}
 	}
 
-	// port_open: 1 if the port is open (TCP SYN/ACK or a matching UDP reply), 0 if
-	// reachable but closed (TCP RST / UDP ICMP port-unreachable) or only silence,
-	// NaN when not applicable — non-TCP/UDP probes, or any probe that errored
-	// (PortOpen left nil). Combine with probe.up to tell closed from filtered/down.
-	portOpen := math.NaN()
-	if r.PortOpen != nil {
-		if *r.PortOpen {
-			portOpen = 1
-		} else {
-			portOpen = 0
-		}
+	m := r.Measured()
+
+	rttMin, rttMean, rttMax, rttStddev := math.NaN(), math.NaN(), math.NaN(), math.NaN()
+	if m.RTT != nil {
+		rttMin, rttMean, rttMax, rttStddev = m.RTT.MinMS, m.RTT.MeanMS, m.RTT.MaxMS, m.RTT.StddevMS
 	}
 
 	e.rttMin.Record(ctx, rttMin, probeAttrs)
 	e.rttMean.Record(ctx, rttMean, probeAttrs)
 	e.rttMax.Record(ctx, rttMax, probeAttrs)
 	e.rttStddev.Record(ctx, rttStddev, probeAttrs)
-	e.packetLoss.Record(ctx, packetLoss, probeAttrs)
+	e.packetLoss.Record(ctx, orNaN(m.Loss), probeAttrs)
 	e.success.Record(ctx, successVal, probeAttrs)
 	e.probeUp.Record(ctx, upVal, probeAttrs)
-	e.httpDuration.Record(ctx, httpDuration, probeAttrs)
-	e.portOpen.Record(ctx, portOpen, probeAttrs)
+	e.httpDuration.Record(ctx, orNaN(m.Duration), probeAttrs)
+	e.portOpen.Record(ctx, portOpenValue(m.PortOpen), probeAttrs)
 
 	return nil
+}
+
+// orNaN returns *p, or NaN when p is nil ("not measured").
+func orNaN(p *float64) float64 {
+	if p == nil {
+		return math.NaN()
+	}
+	return *p
+}
+
+// portOpenValue renders an optional PortOpen as the port_open gauge value:
+// NaN when not applicable, 1 when open, 0 when closed.
+func portOpenValue(p *bool) float64 {
+	if p == nil {
+		return math.NaN()
+	}
+	if *p {
+		return 1
+	}
+	return 0
 }
 
 // Close flushes in-flight data and shuts down the MeterProvider.
