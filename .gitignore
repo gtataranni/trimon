@@ -31,3 +31,4 @@ go.work.sum
 .claude/
 .future/
 commit-message.txt
+*.code-workspace
