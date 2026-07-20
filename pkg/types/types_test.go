@@ -96,3 +96,158 @@ func TestErrorMsgOmitEmpty(t *testing.T) {
 		t.Error("error_msg should be omitted when empty")
 	}
 }
+
+// TestMeasured is the canonical matrix for ProbeResult.Measured(): every
+// status × probe type combination, asserting exactly which pointers are
+// non-nil and their values. This is the single source of truth for the four
+// predicates (RTT, Loss, Duration, PortOpen) — exporter tests should not
+// re-derive them.
+func TestMeasured(t *testing.T) {
+	probeTypes := []string{ProbeTypeICMP, ProbeTypeTCP, ProbeTypeUDP, ProbeTypeDNS, ProbeTypeHTTP}
+
+	type want struct {
+		rtt      *RTT
+		loss     *float64
+		duration *float64
+		portOpen *bool
+	}
+
+	f := func(v float64) *float64 { return &v }
+	b := func(v bool) *bool { return &v }
+
+	for _, pt := range probeTypes {
+		t.Run(pt+"/success", func(t *testing.T) {
+			r := ProbeResult{
+				ProbeType:       pt,
+				Status:          StatusSuccess,
+				PacketsSent:     3,
+				PacketsReceived: 3,
+				RTTMinMS:        1, RTTMeanMS: 2, RTTMaxMS: 3, RTTStddevMS: 0.5,
+				PacketLossRatio: 0,
+				DurationMS:      42.5,
+			}
+			w := want{loss: f(0)}
+			if pt != ProbeTypeHTTP {
+				w.rtt = &RTT{MinMS: 1, MeanMS: 2, MaxMS: 3, StddevMS: 0.5}
+			} else {
+				w.duration = f(42.5)
+			}
+			assertMeasured(t, r, w)
+		})
+
+		t.Run(pt+"/partial", func(t *testing.T) {
+			r := ProbeResult{
+				ProbeType:       pt,
+				Status:          StatusPartial,
+				PacketsSent:     3,
+				PacketsReceived: 2,
+				RTTMinMS:        1, RTTMeanMS: 2, RTTMaxMS: 3, RTTStddevMS: 0.5,
+				PacketLossRatio: 0.33,
+			}
+			w := want{loss: f(0.33)}
+			if pt != ProbeTypeHTTP {
+				w.rtt = &RTT{MinMS: 1, MeanMS: 2, MaxMS: 3, StddevMS: 0.5}
+			}
+			assertMeasured(t, r, w)
+		})
+
+		t.Run(pt+"/failure", func(t *testing.T) {
+			r := ProbeResult{
+				ProbeType:       pt,
+				Status:          StatusFailure,
+				PacketsSent:     3,
+				PacketsReceived: 0,
+				PacketLossRatio: 1.0,
+			}
+			w := want{loss: f(1.0)}
+			assertMeasured(t, r, w)
+		})
+
+		t.Run(pt+"/error", func(t *testing.T) {
+			r := ProbeResult{
+				ProbeType: pt,
+				Status:    StatusError,
+				ErrorType: "probe_error",
+			}
+			w := want{}
+			assertMeasured(t, r, w)
+		})
+	}
+
+	t.Run("tcp/success with PortOpen true", func(t *testing.T) {
+		r := ProbeResult{
+			ProbeType:       ProbeTypeTCP,
+			Status:          StatusSuccess,
+			PacketsSent:     1,
+			PacketsReceived: 1,
+			PacketLossRatio: 0,
+			PortOpen:        b(true),
+		}
+		w := want{loss: f(0), rtt: &RTT{}, portOpen: b(true)}
+		assertMeasured(t, r, w)
+	})
+
+	t.Run("udp/failure with PortOpen false", func(t *testing.T) {
+		r := ProbeResult{
+			ProbeType:       ProbeTypeUDP,
+			Status:          StatusFailure,
+			PacketsSent:     1,
+			PacketsReceived: 0,
+			PacketLossRatio: 1.0,
+			PortOpen:        b(false),
+		}
+		w := want{loss: f(1.0), portOpen: b(false)}
+		assertMeasured(t, r, w)
+	})
+
+	t.Run("http/success with DurationMS == 0 (edge case)", func(t *testing.T) {
+		r := ProbeResult{
+			ProbeType:       ProbeTypeHTTP,
+			Status:          StatusSuccess,
+			PacketsSent:     1,
+			PacketsReceived: 1,
+			PacketLossRatio: 0,
+			DurationMS:      0,
+		}
+		w := want{loss: f(0)}
+		assertMeasured(t, r, w)
+	})
+}
+
+func assertMeasured(t *testing.T, r ProbeResult, w struct {
+	rtt      *RTT
+	loss     *float64
+	duration *float64
+	portOpen *bool
+}) {
+	t.Helper()
+	m := r.Measured()
+
+	if (m.RTT == nil) != (w.rtt == nil) {
+		t.Fatalf("RTT presence: got %v, want %v", m.RTT, w.rtt)
+	}
+	if m.RTT != nil && *m.RTT != *w.rtt {
+		t.Errorf("RTT value: got %+v, want %+v", *m.RTT, *w.rtt)
+	}
+
+	if (m.Loss == nil) != (w.loss == nil) {
+		t.Fatalf("Loss presence: got %v, want %v", m.Loss, w.loss)
+	}
+	if m.Loss != nil && *m.Loss != *w.loss {
+		t.Errorf("Loss value: got %v, want %v", *m.Loss, *w.loss)
+	}
+
+	if (m.Duration == nil) != (w.duration == nil) {
+		t.Fatalf("Duration presence: got %v, want %v", m.Duration, w.duration)
+	}
+	if m.Duration != nil && *m.Duration != *w.duration {
+		t.Errorf("Duration value: got %v, want %v", *m.Duration, *w.duration)
+	}
+
+	if (m.PortOpen == nil) != (w.portOpen == nil) {
+		t.Fatalf("PortOpen presence: got %v, want %v", m.PortOpen, w.portOpen)
+	}
+	if m.PortOpen != nil && *m.PortOpen != *w.portOpen {
+		t.Errorf("PortOpen value: got %v, want %v", *m.PortOpen, *w.portOpen)
+	}
+}

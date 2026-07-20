@@ -116,3 +116,46 @@ type ProbeResult struct {
 	ErrorType string            `json:"error_type,omitempty"`
 	Labels    map[string]string `json:"labels"`
 }
+
+// RTT holds the round-trip summary for multi-packet probes.
+type RTT struct {
+	MinMS, MeanMS, MaxMS, StddevMS float64
+}
+
+// Measured reports the optional numeric observations a ProbeResult carries.
+// A nil field means "not measured"; each exporter renders that absence its own
+// way (otlp -> NaN, stdout-json -> omitted, stdout-text -> skipped). This is
+// the single source of truth for which observations a result carries — do not
+// re-derive these predicates elsewhere.
+type Measured struct {
+	RTT      *RTT     // nil unless ProbeType != "http" && PacketsReceived > 0
+	Loss     *float64 // nil iff Status.IsError(); else value = PacketLossRatio
+	Duration *float64 // non-nil iff ProbeType == "http" && DurationMS > 0
+	PortOpen *bool    // mirrors ProbeResult.PortOpen (nil = N/A)
+}
+
+// Measured reports the optional numeric observations this result carries.
+func (r ProbeResult) Measured() Measured {
+	var m Measured
+	if r.ProbeType != ProbeTypeHTTP && r.PacketsReceived > 0 {
+		m.RTT = &RTT{
+			MinMS:    r.RTTMinMS,
+			MeanMS:   r.RTTMeanMS,
+			MaxMS:    r.RTTMaxMS,
+			StddevMS: r.RTTStddevMS,
+		}
+	}
+	if !r.Status.IsError() {
+		loss := r.PacketLossRatio
+		m.Loss = &loss
+	}
+	if r.ProbeType == ProbeTypeHTTP && r.DurationMS > 0 {
+		duration := r.DurationMS
+		m.Duration = &duration
+	}
+	if r.PortOpen != nil {
+		portOpen := *r.PortOpen
+		m.PortOpen = &portOpen
+	}
+	return m
+}
