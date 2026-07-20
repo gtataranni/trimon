@@ -78,6 +78,14 @@ The entire design hangs off two interfaces:
 **stop and flag it in your issue/PR before writing code** — it affects every probe and
 exporter implementation and needs to be agreed upfront.
 
+### Design decisions live in ADRs
+
+The *why* behind trimon's non-obvious choices — the metric data model, config split, NaN
+semantics — is recorded in [docs/adr/](docs/adr/), not restated across reference docs.
+Read the relevant ADR before changing that behaviour, and record a **new** significant
+decision as an ADR (copy [docs/adr/0000-template.md](docs/adr/0000-template.md)) rather than
+adding a paragraph to a reference doc.
+
 ### Adding a probe type or exporter
 
 These follow a fixed recipe — see the README:
@@ -113,8 +121,9 @@ distinct.
 ### Metrics and label cardinality
 
 Metrics are defined once via the OTel SDK in `internal/exporter/otlp/otlp.go` and exposed
-on `/metrics` through the Prometheus bridge. The full spec lives in
-[docs/metrics.md](docs/metrics.md) — read it before adding or changing a metric. In
+on `/metrics` through the Prometheus bridge. The instrument spec lives in
+[docs/metrics.md](docs/metrics.md) and the rationale in the [ADRs](docs/adr/) — read them
+before adding or changing a metric. In
 particular: **never put per-run or high-churn values** (ephemeral ports, IDs, timestamps,
 measured latencies, drifting counters) into `ProbeResult.Labels` — every label becomes a
 metric attribute on every series and creates an unbounded cardinality leak. A value may be

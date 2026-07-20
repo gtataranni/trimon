@@ -81,54 +81,21 @@ trimon uses two config files:
 - **[config.example.yaml](config.example.yaml)** — ops config (`--config`): exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
 - **[probes.example.yaml](probes.example.yaml)** — probe config (`--probes`): global probe defaults and target list. Safe to expose to unprivileged users; returned by `GET /config`.
 
-See [docs/config.md](docs/config.md) for the full design rationale.
-
-**Probe fields:**
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `name` | *(required)* | Unique probe identifier |
-| `type` | *(required)* | Probe type (`icmp`) |
-| `target` | *(required)* | Destination IP or hostname |
-| `source_ip` | `""` (OS default) | Source interface IP to bind to |
-| `probe_every` | global | How often to run this probe |
-| `timeout` | global | Per-probe timeout |
-| `count` | global | Number of ICMP packets per run |
-| `packet_interval` | `1s` | Wait between individual packets |
-| `labels` | `{}` | Arbitrary key-value labels attached to all metrics |
+Both example files are annotated field-by-field and are the canonical reference for probe
+fields and probe types. See
+[ADR-0007](docs/adr/0007-two-config-files.md) for the two-file split and its rationale.
 
 ---
 
 ## Metrics reference
 
-All metrics are served via the OTel Prometheus bridge. Instruments are defined once in
-`internal/exporter/otlp/otlp.go` and exported to both `/metrics` and an optional OTLP
-collector simultaneously.
-
-**Probe result metrics** (attributes: `probe.name`, `probe.type`, `probe.target`, `probe.source_ip`, user labels):
-
-| Metric | Type | Notes |
-|--------|------|-------|
-| `trimon_probe_rtt_min_milliseconds` | Gauge | 0 on failure/error |
-| `trimon_probe_rtt_mean_milliseconds` | Gauge | 0 on failure/error |
-| `trimon_probe_rtt_max_milliseconds` | Gauge | 0 on failure/error |
-| `trimon_probe_rtt_stddev_milliseconds` | Gauge | 0 on failure/error |
-| `trimon_probe_packet_loss_ratio` | Gauge | 1.0 on failure, NaN on error |
-| `trimon_probe_packets_sent_total` | Counter | not incremented on error |
-| `trimon_probe_packets_received_total` | Counter | not incremented on error |
-| `trimon_probe_success` | Gauge | 1 if all packets replied |
-| `trimon_probe_up` | Gauge | 1 if ≥1 reply; use this for alerting |
-
-**Self-observability metrics:**
-
-| Metric | Type | Labels |
-|--------|------|--------|
-| `trimon_build_info` | Gauge | `version`, `commit`, `goversion` |
-| `trimon_probe_runs_total` | Counter | `probe.name` |
-| `trimon_probe_errors_total` | Counter | `probe.name`, `error.type` |
-| `trimon_probe_results_dropped_total` | Counter | `probe.name` — incremented when pipeline buffer is full |
-| `trimon_scheduler_goroutines` | Gauge | — |
-| `trimon_config_reloads_total` | Counter | — |
+All metrics are served via the OTel Prometheus bridge and, when enabled, pushed over OTLP.
+Instruments are defined once in `internal/exporter/otlp/otlp.go` — that file plus
+[docs/metrics.md](docs/metrics.md) are the source of truth for names, types, and semantics.
+Key signals: `trimon_probe_up` (1 if ≥1 reply — use this for alerting), `trimon_probe_success`
+(1 if all packets replied), `trimon_probe_rtt_*_milliseconds`, `trimon_probe_packet_loss_ratio`,
+`trimon_probe_port_open`, and `trimon_probe_duration_milliseconds`. Design rationale lives in
+the [ADRs](docs/adr/).
 
 ---
 

@@ -23,5 +23,5 @@ scrape_configs:
     # not pushed via OTLP, so we keep this job for those.
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'trimon_probe_(rtt_.*|packet_loss_ratio|packets_sent_total|packets_received_total|success|up)'
+        regex: 'trimon_probe_(rtt_.*|duration_milliseconds|packet_loss_ratio|port_open|packets_sent_total|packets_received_total|success|up)'
         action: drop

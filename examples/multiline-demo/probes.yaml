@@ -7,7 +7,8 @@ global:
 probes:
   - name: fiber-internet-gw
     type: icmp
-    target: "172.20.0.100"
+    targets:
+      - "172.20.0.100"
     source_ip: "172.20.0.2"
     count: 5
     labels:
@@ -17,7 +18,8 @@ probes:
 
   - name: cable-internet-gw
     type: icmp
-    target: "172.21.0.100"
+    targets:
+      - "172.21.0.100"
     source_ip: "172.21.0.2"
     count: 5
     labels:
@@ -27,7 +29,8 @@ probes:
 
   - name: vsat-internet-gw
     type: icmp
-    target: "172.22.0.100"
+    targets:
+      - "172.22.0.100"
     source_ip: "172.22.0.2"
     count: 5
     packet_interval: 500ms
@@ -39,7 +42,8 @@ probes:
 
   - name: critical-dc
     type: icmp
-    target: "172.23.0.10"
+    targets:
+      - "172.23.0.10"
     source_ip: "172.23.0.2"
     count: 3
     probe_every: 10s
@@ -49,7 +53,8 @@ probes:
 
   - name: critical-dns
     type: icmp
-    target: "172.23.0.20"
+    targets:
+      - "172.23.0.20"
     source_ip: "172.23.0.2"
     count: 3
     probe_every: 10s
