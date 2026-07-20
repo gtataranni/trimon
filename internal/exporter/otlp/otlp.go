@@ -57,6 +57,10 @@ type Exporter struct {
 	exporterErrors metric.Int64Counter
 	configReloads  metric.Int64Counter
 
+	// ordered inventory of every registered instrument, captured at
+	// registration time via recordingMeter
+	instruments []InstrumentInfo
+
 	// set once before first scrape via SetGoroutinesGetter
 	getGoroutines func() int
 }
@@ -156,78 +160,99 @@ func (e *Exporter) RecordExporterError(ctx context.Context, exporterName string)
 func (e *Exporter) registerInstruments(meter metric.Meter, version, commit string) error {
 	var err error
 
+	// Wrap the meter so every instrument created below is captured in the
+	// ordered inventory at birth. Registration must go through this wrapper.
+	meter = &recordingMeter{Meter: meter, inv: &e.instruments}
+
 	// probe result gauges
-	e.rttMin, err = meter.Float64Gauge("trimon.probe.rtt.min", metric.WithUnit("ms"))
+	e.rttMin, err = meter.Float64Gauge("trimon.probe.rtt.min", metric.WithUnit("ms"),
+		metric.WithDescription("Minimum ICMP round-trip time over the last probe run; NaN on failure/error and for HTTP probes"))
 	if err != nil {
 		return err
 	}
-	e.rttMean, err = meter.Float64Gauge("trimon.probe.rtt.mean", metric.WithUnit("ms"))
+	e.rttMean, err = meter.Float64Gauge("trimon.probe.rtt.mean", metric.WithUnit("ms"),
+		metric.WithDescription("Mean ICMP round-trip time over the last probe run; NaN on failure/error and for HTTP probes"))
 	if err != nil {
 		return err
 	}
-	e.rttMax, err = meter.Float64Gauge("trimon.probe.rtt.max", metric.WithUnit("ms"))
+	e.rttMax, err = meter.Float64Gauge("trimon.probe.rtt.max", metric.WithUnit("ms"),
+		metric.WithDescription("Maximum ICMP round-trip time over the last probe run; NaN on failure/error and for HTTP probes"))
 	if err != nil {
 		return err
 	}
-	e.rttStddev, err = meter.Float64Gauge("trimon.probe.rtt.stddev", metric.WithUnit("ms"))
+	e.rttStddev, err = meter.Float64Gauge("trimon.probe.rtt.stddev", metric.WithUnit("ms"),
+		metric.WithDescription("Standard deviation of ICMP round-trip time over the last probe run; NaN on failure/error and for HTTP probes"))
 	if err != nil {
 		return err
 	}
-	e.packetLoss, err = meter.Float64Gauge("trimon.probe.packet_loss", metric.WithUnit("ratio"))
+	e.packetLoss, err = meter.Float64Gauge("trimon.probe.packet_loss", metric.WithUnit("ratio"),
+		metric.WithDescription("Fraction of packets with no reply in the last run; 1.0 on failure, NaN on error"))
 	if err != nil {
 		return err
 	}
-	e.httpDuration, err = meter.Float64Gauge("trimon.probe.duration", metric.WithUnit("ms"))
+	e.httpDuration, err = meter.Float64Gauge("trimon.probe.duration", metric.WithUnit("ms"),
+		metric.WithDescription("HTTP wall-clock duration from request start to body drain; NaN when no response received or for non-HTTP probes"))
 	if err != nil {
 		return err
 	}
-	e.portOpen, err = meter.Float64Gauge("trimon.probe.port_open")
+	e.portOpen, err = meter.Float64Gauge("trimon.probe.port_open",
+		metric.WithDescription("TCP & UDP port reachability; 1 open, 0 closed/no-reply, NaN for other probe types or error"))
 	if err != nil {
 		return err
 	}
-	e.success, err = meter.Int64Gauge("trimon.probe.success")
+	e.success, err = meter.Int64Gauge("trimon.probe.success",
+		metric.WithDescription("1 only when status=success (all packets replied), else 0"))
 	if err != nil {
 		return err
 	}
-	e.probeUp, err = meter.Int64Gauge("trimon.probe.up")
+	e.probeUp, err = meter.Int64Gauge("trimon.probe.up",
+		metric.WithDescription("1 when status=success or partial (at least one reply), else 0"))
 	if err != nil {
 		return err
 	}
 
 	// probe result counters (cumulative, monotonically increasing)
-	e.pktSent, err = meter.Int64Counter("trimon.probe.packets_sent", metric.WithUnit("{packets}"))
+	e.pktSent, err = meter.Int64Counter("trimon.probe.packets_sent", metric.WithUnit("{packets}"),
+		metric.WithDescription("Packets sent per probe run; not incremented on error"))
 	if err != nil {
 		return err
 	}
-	e.pktReceived, err = meter.Int64Counter("trimon.probe.packets_received", metric.WithUnit("{packets}"))
+	e.pktReceived, err = meter.Int64Counter("trimon.probe.packets_received", metric.WithUnit("{packets}"),
+		metric.WithDescription("Packets received per probe run; not incremented on error"))
 	if err != nil {
 		return err
 	}
 
 	// self-observability counters
-	e.probeRuns, err = meter.Int64Counter("trimon.probe.runs", metric.WithUnit("{runs}"))
+	e.probeRuns, err = meter.Int64Counter("trimon.probe.runs", metric.WithUnit("{runs}"),
+		metric.WithDescription("Total probe runs, labelled by probe.name"))
 	if err != nil {
 		return err
 	}
-	e.probeErrors, err = meter.Int64Counter("trimon.probe.errors", metric.WithUnit("{errors}"))
+	e.probeErrors, err = meter.Int64Counter("trimon.probe.errors", metric.WithUnit("{errors}"),
+		metric.WithDescription("Total probe errors, labelled by probe.name and error.type"))
 	if err != nil {
 		return err
 	}
-	e.resultsDropped, err = meter.Int64Counter("trimon.probe.results_dropped", metric.WithUnit("{results}"))
+	e.resultsDropped, err = meter.Int64Counter("trimon.probe.results_dropped", metric.WithUnit("{results}"),
+		metric.WithDescription("Results dropped when the pipeline buffer is full, labelled by probe.name"))
 	if err != nil {
 		return err
 	}
-	e.exporterErrors, err = meter.Int64Counter("trimon.exporter.errors", metric.WithUnit("{errors}"))
+	e.exporterErrors, err = meter.Int64Counter("trimon.exporter.errors", metric.WithUnit("{errors}"),
+		metric.WithDescription("Exporter failures to ship a result, labelled by exporter.name"))
 	if err != nil {
 		return err
 	}
-	e.configReloads, err = meter.Int64Counter("trimon.config.reloads", metric.WithUnit("{reloads}"))
+	e.configReloads, err = meter.Int64Counter("trimon.config.reloads", metric.WithUnit("{reloads}"),
+		metric.WithDescription("Total configuration reloads"))
 	if err != nil {
 		return err
 	}
 
 	// build info — static observable gauge, reported on every scrape
-	buildInfoGauge, err := meter.Int64ObservableGauge("trimon.build.info")
+	buildInfoGauge, err := meter.Int64ObservableGauge("trimon.build.info",
+		metric.WithDescription("Build metadata as labels (version, commit, goversion); value is always 1"))
 	if err != nil {
 		return err
 	}
@@ -244,7 +269,8 @@ func (e *Exporter) registerInstruments(meter metric.Meter, version, commit strin
 
 	// scheduler goroutines — live observable gauge
 	goroutinesGauge, err := meter.Int64ObservableGauge("trimon.scheduler.goroutines",
-		metric.WithUnit("{goroutines}"))
+		metric.WithUnit("{goroutines}"),
+		metric.WithDescription("Live scheduler goroutine count, observed on each scrape"))
 	if err != nil {
 		return err
 	}
