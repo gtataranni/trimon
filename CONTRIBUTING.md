@@ -5,8 +5,7 @@ Inspection and Monitoring. This guide covers how to set up a dev environment, th
 standards a change must meet, and how to get it merged.
 
 For what trimon *is* and how to run it, start with the [README](README.md). For the
-phase plan and what's in/out of scope, see [ROADMAP.md](ROADMAP.md). For the active
-work backlog, see [TASKS.md](TASKS.md).
+phase plan and what's in/out of scope, see GH Issues.
 
 ---
 
@@ -35,7 +34,7 @@ wait (see [Scope and roadmap](#scope-and-roadmap)).
 - **No CGO.** trimon is pure Go (`CGO_ENABLED=0`); do not introduce CGO.
 - **golangci-lint** (v2) — for `make lint`. See the config in [.golangci.yaml](.golangci.yaml).
 - **Linux** — trimon is a **Linux-only** project; macOS, Windows, and other OSes are out
-  of scope for now (see [ROADMAP.md](ROADMAP.md)). ICMP and source-IP binding need Linux
+  of scope for now (see GH Issues). ICMP and source-IP binding need Linux
   raw sockets / `CAP_NET_RAW`. You can develop on a non-Linux host by building and running
   via containers (`make container`, `make dev-stack`), but don't add platform-specific
   support for non-Linux runtime targets.
@@ -207,8 +206,8 @@ responsible for everything you submit, including the DCO sign-off.
 ## Scope and roadmap
 
 trimon is built in phases, each ending in a tagged release. **Do not start phase N+1 work
-in a phase N PR.** Before implementing, check [ROADMAP.md](ROADMAP.md) for the current
-phase and [TASKS.md](TASKS.md) for the active backlog — if your idea isn't in the current
+in a phase N PR.** Before implementing, check GH Milestones for the current
+phase and GH Issues for the active backlog — if your idea isn't in the current
 phase, open an issue to discuss it rather than bundling it in.
 
 Releases are cut by maintainers via `make release V=vX.Y.Z` (see the README's

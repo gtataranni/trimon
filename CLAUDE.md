@@ -78,8 +78,6 @@ trimon/
 ├── config.example.yaml
 ├── Dockerfile
 ├── Makefile
-├── ROADMAP.md
-├── TASKS.md
 └── README.md
 ```
 
@@ -177,12 +175,9 @@ or "grows with time", it is not a label.
 
 **Current phase: Phase 4 — v0.4.0 (additional protocols).** Phases 1–3 are complete.
 
-See [ROADMAP.md](ROADMAP.md) for the full phase plan, per-phase checklists, and out-of-scope items.
-See [TASKS.md](TASKS.md) for the active task backlog — check it before starting any implementation work.
-
-Each phase ends in a tagged release. Do not start phase N+1 work in a phase N PR.
+See GH Issues.
 
 ## When in doubt
 
 1. Re-read the relevant interface in `internal/probe/prober.go` or `internal/exporter/exporter.go`.
-2. Check [TASKS.md](TASKS.md) for the active backlog; check [ROADMAP.md](ROADMAP.md) for phase scope — if the task isn't in the current phase, it's probably out of scope.
+2. Check GH Issues and milestones for phase scope — if the task isn't in the current phase, it's probably out of scope.

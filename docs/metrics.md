@@ -170,4 +170,4 @@ and bloats the time-series count.
 ## Trends and advanced metrics
 
 Recording rules, long-window loss rates, and probe result history buffering are out of
-scope for current phases. See [ROADMAP.md](../ROADMAP.md) Phase 6 for the planned work.
+scope for current phases. See GH Milestones `v0.6.0` for the planned work.
