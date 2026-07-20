@@ -7,6 +7,10 @@ the right one depending on whether you need fast alerting or rich dashboard labe
 
 ## The two paths
 
+Both paths are fed by the same in-process OTel instrument set; see
+[ADR-0001](adr/0001-unified-otel-meterprovider.md) for *why* a single MeterProvider drives
+both. This doc covers only the operational consequence: their differing latency profiles.
+
 ```
 trimon probe result
        │
@@ -61,15 +65,10 @@ different values for the same probe and produce confusing aggregations.
 Running both scrape jobs produces duplicate `trimon_probe_*` time series unless one set
 is dropped. The recommended approach (used in the bundled `prometheus.yml` files) is to
 drop probe result metrics from the direct scrape job and keep only self-observability
-metrics there:
-
-```yaml
-# in the job_name: trimon scrape config
-metric_relabel_configs:
-  - source_labels: [__name__]
-    regex: 'trimon_probe_(rtt_.*|packet_loss_ratio|packets_sent_total|packets_received_total|success|up)'
-    action: drop
-```
+metrics there, via a `metric_relabel_configs` drop rule on `__name__`. See the canonical
+rule in
+[examples/local-stack/prometheus.yml](../examples/local-stack/prometheus.yml) — that file
+is the source of truth for the exact metric-name regex, so this doc does not duplicate it.
 
 Self-observability metrics (`trimon_probe_runs_total`, `trimon_probe_errors_total`,
 `trimon_probe_results_dropped_total`, `trimon_scheduler_goroutines`, etc.) are **not**

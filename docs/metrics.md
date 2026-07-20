@@ -1,25 +1,19 @@
-# trimon metrics design
+# trimon metrics reference
 
-This document records the design decisions behind trimon's metric instrumentation.
+Instrument names, types, and semantics. The **source of truth** for what exists is the
+instrument definitions in `internal/exporter/otlp/otlp.go`; this doc mirrors them and must
+be updated alongside changes there. The **rationale** for the design choices lives in the
+[ADRs](adr/) linked below — read those before changing how a metric behaves.
+
 Read this before adding, removing, or renaming instruments.
 
 ---
 
-## Architecture: unified OTel SDK
+## Architecture
 
-trimon uses a single OTel SDK `MeterProvider` with two readers:
-
-| Reader | When active | Purpose |
-|--------|-------------|---------|
-| Prometheus bridge (`go.opentelemetry.io/otel/exporters/prometheus`) | Always | Serves `/metrics` in Prometheus text format |
-| OTLP periodic reader | When `exporters.otlp.enabled: true` | Pushes to OTel Collector via gRPC or HTTP |
-
-All instruments are defined once in `internal/exporter/otlp/otlp.go`. There is no
-separate Prometheus client or second instrument set.
-
----
-
-## Instrument inventory
+A single OTel SDK `MeterProvider` drives both `/metrics` (via the Prometheus bridge) and
+optional OTLP push. All instruments are defined once in `internal/exporter/otlp/otlp.go`.
+Rationale: [ADR-0001](adr/0001-unified-otel-meterprovider.md).
 
 All instruments use the prefix `trimon.` and the scope `github.com/gtataranni/trimon`.
 
@@ -42,52 +36,38 @@ Recorded on every `Export()` call. Attributes: `probe.name`, `probe.type`,
 | `trimon.probe.success` | Int64Gauge | — | `trimon_probe_success` | 1 only if status=success (all packets replied) |
 | `trimon.probe.up` | Int64Gauge | — | `trimon_probe_up` | 1 if status=success or partial (≥1 reply) |
 
-RTT gauges emit `NaN` on `failure` and `error` — rather than `0` or retaining the last value — because 0ms is physically impossible and would corrupt latency alerting thresholds, while NaN causes Grafana to break the graph line, making the absence of measurement visually unambiguous; this mirrors the OTel ecosystem convention and is analogous to how `probe.packet_loss` uses NaN on `error`.
-
-**Why RTT and duration are separate instruments:** ICMP's min/mean/max/stddev describe network jitter across N packets (a statistical distribution). HTTP always sends one request per tick; repeating requests 2–N would reuse the TCP connection and produce a bimodal distribution that makes mean and stddev misleading. A single `duration` (DNS + TCP + TLS + TTFB + body) is the canonical HTTP latency measure, matching the approach of blackbox_exporter, Datadog Synthetics, and Checkly.
-
-**`probe.success` vs `probe.up`:** intentional semantic difference.
-`probe.up` is the alerting signal (`ALERT IF probe_up == 0`); it is 1 for any partial
-reply so that intermittent ICMP filtering does not fire a page. `probe.success` is a
-strict signal — 1 only when every sent packet received a reply.
-
 ### Self-observability instruments
 
 | OTel name | Type | Unit | Prometheus name | Attributes |
 |-----------|------|------|-----------------|------------|
 | `trimon.probe.runs` | Int64Counter | `{runs}` | `trimon_probe_runs_total` | `probe.name` |
 | `trimon.probe.errors` | Int64Counter | `{errors}` | `trimon_probe_errors_total` | `probe.name`, `error.type` |
+| `trimon.probe.results_dropped` | Int64Counter | `{results}` | `trimon_probe_results_dropped_total` | `probe.name` — incremented when the pipeline buffer is full |
 | `trimon.build.info` | Int64ObservableGauge | — | `trimon_build_info` | `version`, `commit`, `goversion` |
 | `trimon.scheduler.goroutines` | Int64ObservableGauge | `{goroutines}` | `trimon_scheduler_goroutines` | — |
 | `trimon.config.reloads` | Int64Counter | `{reloads}` | `trimon_config_reloads_total` | — |
 
----
-
-## `probe.status` is not an attribute
-
-`probe.status` is intentionally **not** attached to any instrument.
-
-The Prometheus data model is designed around labels that identify the *identity* of
-what is being measured — which probe, which target, which type. Labels are not meant
-to carry the *state* of that entity. When a label's value changes over time (a
-"mutable label"), Prometheus does not overwrite the old series; each unique label set
-is an independent time series. For Gauges, the old series keeps its last value until
-the staleness window expires (~5 minutes by default). This creates **overlapping time
-series**: contradictory values for the same logical entity coexist in the database,
-and any `max()` or dashboard panel that aggregates over both will produce incorrect
-results.
-
-Using `probe.status` as a label would also add a cardinality dimension with no query
-value: you would never aggregate `probe_up{status="success"}` across probes — it is
-meaningless to sum successes and failures together. The status is fully encoded in the
-gauge values (`probe.up`, `probe.success`, `probe.packet_loss`, NaN for error) without
-needing a separate label dimension.
+Operational counters (`runs`, `errors`, `results_dropped`) carry only `probe.name` — no
+target/type dimensions, which would add cardinality with no diagnostic value.
 
 ---
 
-## `probe.up` semantics
+## Semantics — summary + rationale
 
-`probe.up = 1` if at least one probe packet received a reply in the last run; 0 otherwise.
+Behaviour is summarised here; the *why* is in the ADRs.
+
+- **`probe.status` is never a metric attribute.** State is encoded in gauge values, not
+  mutable labels. → [ADR-0002](adr/0002-status-not-a-label.md)
+- **RTT gauges and `packet_loss` emit NaN, not 0, when unmeasured** (RTT on
+  failure/error; loss on error). → [ADR-0003](adr/0003-nan-not-zero-for-unmeasured.md)
+- **ICMP has RTT stats; HTTP has a single `duration`.**
+  → [ADR-0004](adr/0004-rtt-stats-vs-http-duration.md)
+- **`probe.up` (≥1 reply, the alerting signal) vs `probe.success` (all replied, strict).**
+  → [ADR-0005](adr/0005-up-vs-success.md)
+- **`port_open` + `up` encode open / closed / filtered for TCP & UDP.** A refused port is
+  reachability, not loss. → [ADR-0006](adr/0006-port-open-encoding.md)
+
+### `probe.up` values
 
 | status | probe.up |
 |--------|----------|
@@ -96,74 +76,25 @@ needing a separate label dimension.
 | `failure` (100% loss) | 0 |
 | `error` (probe could not run) | 0 |
 
----
+### `probe.packet_loss` values
 
-## `probe.packet_loss` semantics
+A Float64Gauge in `[0.0, 1.0]` — the fraction of packets with no reply in the last run:
+`0.0` success, `0.0 < v < 1.0` partial, `1.0` failure, **`NaN`** error.
 
-A Float64Gauge in `[0.0, 1.0]` representing the fraction of packets with no reply in
-the last completed probe run.
+### `probe.port_open` values (TCP & UDP)
 
-- `0.0` — all packets replied (status = success)
-- `0.0 < v < 1.0` — partial loss (status = partial)
-- `1.0` — total loss (status = failure)
-- **`NaN`** — probe could not run (status = error)
+Combine with `probe.up` to recover the three states (see
+[ADR-0006](adr/0006-port-open-encoding.md) for the full table and rationale):
 
-NaN makes the undefined state explicit. `1.0` on error would collapse "target
-unreachable" and "trimon internal failure" into the same value. Prometheus, VictoriaMetrics,
-and Grafana Mimir handle NaN natively.
-
----
-
-## `probe.port_open` semantics (TCP & UDP probes)
-
-A Float64Gauge encoding port reachability, set by the TCP probe (both `connect` and
-`syn` modes) and the UDP probe:
-
-- `1` — port **open**: a TCP SYN/ACK (or completed connect handshake), or a matching UDP reply
-- `0` — port **not open**: a TCP RST, a UDP ICMP port-unreachable, or no reply at all
-- **`NaN`** — probe type without port semantics (ICMP, HTTP), or the probe could not run (status = error)
-
-The operationally distinct states are recovered by **combining it with `probe.up`** —
-deliberately, rather than encoding a 3-valued enum as an attribute. Per
-[`probe.status` is not an attribute](#probestatus-is-not-an-attribute), trimon keeps
-state in gauge *values*, not in mutable labels; this metric extends the existing
-`probe.up`/`probe.success` binary-gauge idiom rather than introducing a `state=` label.
-
-| `probe.up` | `port_open` | TCP meaning | UDP meaning |
-|---|---|---|---|
-| 1 | 1 | **OPEN** — SYN/ACK | **OPEN** — a (matching) reply |
-| 1 | 0 | **CLOSED** — RST | **CLOSED** — ICMP port-unreachable |
-| 0 | 0 | **FILTERED / DROPPED / DOWN** — no reply | **OPEN\|FILTERED / DOWN** — silence |
-| 0 | 1 | impossible | impossible |
-
-**A refused port is reachability, not loss.** network reachability is trimon's primary signal
-and service availability a secondary one, so a host that actively refuses a port still counts as a
-received reply: `probe.up = 1`, `packet_loss = 0`, status `success`, and `port_open = 0`
-is what distinguishes a reachable closed port from an open one. For TCP this refusal is a RST
-(connect-mode `ECONNREFUSED` is treated identically to a SYN-mode RST); for UDP it is an
-ICMP port-unreachable, delivered as `ECONNREFUSED` on the connected socket. Only silence
-(timeout) is packet loss.
-
-**UDP's `open|filtered` ambiguity is inherent.** UDP has no handshake, so a quietly-open
-service that never replies and a dropped/filtered packet are indistinguishable — both are
-silence (`up = 0`, `port_open = 0`). UDP can therefore positively confirm only *open* (a
-reply) or *closed* (ICMP unreachable); the third state is the union open|filtered, exactly
-as in Nmap. Sending a protocol-appropriate `payload`/`expected_response` maximizes the
-chance an open service answers, narrowing the ambiguity.
+| `probe.up` | `port_open` | meaning |
+|---|---|---|
+| 1 | 1 | OPEN |
+| 1 | 0 | CLOSED (TCP RST / UDP ICMP unreachable) |
+| 0 | 0 | FILTERED / DOWN (silence) |
 
 PromQL: open = `trimon_probe_port_open == 1`; closed = `trimon_probe_up == 1 and
 trimon_probe_port_open == 0`; unreachable/filtered = `trimon_probe_up == 0`. Scope to one
-protocol with the `probe_type` label, e.g. `trimon_probe_port_open{probe_type="udp"}`.
-
----
-
-## Why `probe.runs` and `probe.errors` use only `probe.name`
-
-RTT and loss instruments use the full probe attribute set (`probe.name`, `probe.type`,
-`probe.target`, `probe.source_ip`, user labels) because slicing by target or type is
-useful for those measurements. Operational counters (`runs`, `errors`) are summarised
-per probe name only — adding cardinality dimensions there provides no diagnostic value
-and bloats the time-series count.
+protocol with `probe_type`, e.g. `trimon_probe_port_open{probe_type="udp"}`.
 
 ---
 

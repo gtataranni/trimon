@@ -11,7 +11,7 @@ It differs from `blackbox_exporter` in one key way: trimon runs an internal sche
 
 ## Tech stack & hard constraints
 
-- **Language:** Go 1.22+
+- **Language:** Go — version pinned in [go.mod](go.mod)
 - **No CGO** — pure Go only
 - **Linux-only** — the runtime target is Linux (ICMP needs raw sockets / `CAP_NET_RAW`). macOS, Windows, and other OSes are out of scope for now; develop on non-Linux hosts via containers (see [Makefile](Makefile)), but do not add platform-specific support for them
 - **Module path:** `github.com/<handle>/trimon` (set once, do not refactor)
@@ -29,28 +29,10 @@ Do not add new dependencies without an explicit reason. Prefer the standard libr
 
 ## Architecture
 
-```
-config.yaml
-    │
-    ▼
-Config Loader ──API call──▶ hot-reload
-    │
-    ▼
-Scheduler (one goroutine + ticker per prober)
-    │
-    ▼
-Probing Workers ──── bind to source_ip
-    │
-    ▼
-Result Channel (buffered, fan-in)
-    │
-    ▼
-Exporter goroutine ──▶ stdout / OTLP (OTel SDK)
-                              │
-                              └──▶ Prometheus bridge ──▶ /metrics
-
-+ HTTP Server: /healthz, /metrics, /config, /reload
-```
+Pipeline: two config files (`--config` ops, `--probes` targets) → scheduler (one
+goroutine + ticker per probe) → probers (bind to `source_ip`) → buffered result channel →
+exporters (stdout / OTLP + Prometheus bridge `/metrics`). See the [README diagram](README.md#how-it-works)
+for the canonical picture and the HTTP endpoints (`/healthz`, `/metrics`, `/config`, `/reload`).
 
 ### Load-bearing abstractions
 
@@ -92,7 +74,7 @@ make lint        # golangci-lint run
 make container   # build container image
 make release V=vX.Y.Z  # tag and build a release
 
-./bin/trimon --config config.example.yaml --log-level debug
+./bin/trimon --config config.example.yaml --probes probes.example.yaml --log-level debug
 ```
 
 After build, grant raw socket capability for local runs (Linux only):
@@ -114,16 +96,11 @@ Use "Assisted-by: AGENT_NAME:MODEL_VERSION" instead of "Co-Authored-By: name ema
 
 ## Status semantics — get this right
 
-A `ProbeResult.status` is one of:
-
-| Status | Meaning |
-|---|---|
-| `success` | 0% packet loss |
-| `partial` | 0% < loss < 100% |
-| `failure` | 100% loss (host unreachable / all timeouts) |
-| `error` | probe could not execute at all (socket error, invalid `source_ip`, etc.) |
-
-`failure` and `error` are **different**. `failure` means the probe ran correctly and the target didn't respond. `error` means trimon itself couldn't run the probe. Do not collapse them.
+A `ProbeResult.status` is `success` (0% loss), `partial` (0 < loss < 100%), `failure`
+(100% loss — probe ran, target silent), or `error` (trimon couldn't run the probe). The
+`Status` consts live in `pkg/types`; the gauge mapping is in
+[ADR-0005](docs/adr/0005-up-vs-success.md). **`failure` and `error` are different** — a
+reachable-but-silent target vs. trimon failing to execute. Never collapse them.
 
 ## Multi-target / DNS resolution behavior (since v0.3.0)
 
@@ -139,11 +116,13 @@ Each probe config accepts `targets: [...]` (a list of IPs or FQDNs). On every sc
 All instruments are defined once in `internal/exporter/otlp/otlp.go` via the OTel SDK.
 The Prometheus bridge converts them to Prometheus text format at scrape time. The same
 instruments also push to an OTel Collector when `exporters.otlp.enabled: true`.
-Full metric spec (names, attributes, types): **[docs/metrics.md](docs/metrics.md)**
+Full metric spec (names, attributes, types): **[docs/metrics.md](docs/metrics.md)**.
+The *why* behind the data model lives in the **[ADRs](docs/adr/)** — read the relevant one
+before changing metric behaviour.
 
 Key invariants agents frequently get wrong:
-- `probe.status` is **never** an attribute — see docs/metrics.md for the rationale.
-- RTT gauges and `trimon_probe_packet_loss_ratio` emit **NaN** on `status=error`.
+- `probe.status` is **never** an attribute — see [ADR-0002](docs/adr/0002-status-not-a-label.md).
+- RTT gauges and `trimon_probe_packet_loss_ratio` emit **NaN** on `status=error` — see [ADR-0003](docs/adr/0003-nan-not-zero-for-unmeasured.md).
 - Counters (`packets_sent`, `packets_received`) are **not incremented** on `status=error`.
 
 ### Label cardinality — never put per-run values in `ProbeResult.Labels`
@@ -181,3 +160,4 @@ See GH Issues.
 
 1. Re-read the relevant interface in `internal/probe/prober.go` or `internal/exporter/exporter.go`.
 2. Check GH Issues and milestones for phase scope — if the task isn't in the current phase, it's probably out of scope.
+3. For *why* a design is the way it is, check **[docs/adr/](docs/adr/)**; record a new significant decision as an ADR, not as prose in a reference doc.
