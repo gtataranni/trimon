@@ -1,3 +1,6 @@
+// Package otlp defines every OTel instrument trimon emits.
+//
+//go:generate go run github.com/gtataranni/trimon/cmd/gen-metrics-docs
 package otlp
 
 import (

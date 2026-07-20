@@ -8,7 +8,7 @@ TAG      ?= $(VERSION)
 # Container runtime to use for build targets. Override with: make container CONTAINER_RUNTIME=podman
 CONTAINER_RUNTIME ?= docker
 
-.PHONY: build test lint container docker podman clean release dev-stack demo dev-stack-down smoke
+.PHONY: build test lint gen-docs check-docs container docker podman clean release dev-stack demo dev-stack-down smoke
 
 ## build: compile the trimon binary into ./bin/
 build:
@@ -21,6 +21,18 @@ test:
 ## lint: run golangci-lint
 lint:
 	golangci-lint run ./...
+
+## gen-docs: regenerate generated docs (the metrics reference table) from code
+gen-docs:
+	go run ./cmd/gen-metrics-docs
+
+## check-docs: fail if `make gen-docs` would change any committed generated doc
+check-docs: gen-docs
+	@git diff --exit-code -- docs/metrics.md || { \
+	  echo ""; \
+	  echo "docs/metrics.md is stale — run 'make gen-docs' and commit the result."; \
+	  exit 1; \
+	}
 
 ## container: build the container image using CONTAINER_RUNTIME (default: docker)
 ##            examples: make container

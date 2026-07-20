@@ -1,9 +1,10 @@
 # trimon metrics reference
 
 Instrument names, types, and semantics. The **source of truth** for what exists is the
-instrument definitions in `internal/exporter/otlp/otlp.go`; this doc mirrors them and must
-be updated alongside changes there. The **rationale** for the design choices lives in the
-[ADRs](adr/) linked below — read those before changing how a metric behaves.
+instrument definitions in `internal/exporter/otlp/otlp.go`; the instrument table below is
+**generated** from them — run `make gen-docs` to refresh it, do not edit it by hand. The
+**rationale** for the design choices lives in the [ADRs](adr/) linked below — read those
+before changing how a metric behaves.
 
 Read this before adding, removing, or renaming instruments.
 
@@ -20,8 +21,8 @@ All instruments use the prefix `trimon.` and the scope `github.com/gtataranni/tr
 ### Instruments
 
 The table below is **generated** from the instrument definitions in
-`internal/exporter/otlp/otlp.go` — run `go run ./cmd/gen-metrics-docs` to refresh it.
-Do not edit it by hand.
+`internal/exporter/otlp/otlp.go` — run `make gen-docs` to refresh it. Do not edit it by
+hand; CI fails if it drifts from the code.
 
 Probe-result instruments (recorded on every `Export()` call) carry the attributes
 `probe.name`, `probe.type`, `probe.target`, `probe.source_ip`, plus user-defined labels
