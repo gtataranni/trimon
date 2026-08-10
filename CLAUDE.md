@@ -60,7 +60,7 @@ trimon/
 │   └── server/                 # HTTP /healthz, /metrics, /config, /reload
 ├── pkg/types/                  # ProbeResult, ProbeConfig, Status consts
 ├── docs/                       # design docs (metrics.md, etc.)
-├── config.example.yaml
+├── examples/                   # example configs + runnable demo stacks
 ├── Dockerfile
 ├── Makefile
 └── README.md
@@ -77,7 +77,7 @@ make lint        # golangci-lint run
 make container   # build container image
 make release V=vX.Y.Z  # tag and build a release
 
-./bin/trimon --config config.example.yaml --probes ./examples/probes.d --log-level debug
+./bin/trimon --config ./examples/config.example.yaml --probes ./examples/probes.d --log-level debug
 ```
 
 After build, grant raw socket capability for local runs (Linux only):

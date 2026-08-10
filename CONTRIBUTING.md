@@ -51,7 +51,7 @@ Run all three before opening a PR. To run trimon locally after building (Linux):
 
 ```bash
 sudo setcap cap_net_raw+ep ./bin/trimon
-./bin/trimon --config config.example.yaml --probes ./examples/probes.d --log-level debug
+./bin/trimon --config ./examples/config.example.yaml --probes ./examples/probes.d --log-level debug
 ```
 
 For an end-to-end stack (trimon + OTel Collector, optionally Prometheus + Grafana), use
