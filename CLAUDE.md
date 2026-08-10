@@ -34,6 +34,9 @@ goroutine + ticker per probe) → probers (bind to `source_ip`) → buffered res
 exporters (stdout / OTLP + Prometheus bridge `/metrics`). See the [README diagram](README.md#how-it-works)
 for the canonical picture and the HTTP endpoints (`/healthz`, `/metrics`, `/config`, `/reload`).
 
+`--probes` also accepts a **directory** of `*.yaml` files merged at load/reload, with
+`global:` confined to a reserved `_global.yaml` — see [ADR-0008](docs/adr/0008-probe-config-directory.md).
+
 ### Load-bearing abstractions
 
 Two interfaces drive the entire design — `internal/probe/prober.go` (`Prober`) and `internal/exporter/exporter.go` (`Exporter`). Stabilize them before adding implementations. If a change requires modifying these, stop and flag it before proceeding.

@@ -1,6 +1,7 @@
 # ADR-0007: Two config files, load-once, probe-only hot-reload
 
-- **Status:** accepted
+- **Status:** accepted (amended in part by [ADR-0008](0008-probe-config-directory.md),
+  which lets `--probes` name a directory of merged `*.yaml` files)
 - **Date:** 2026-07-20
 
 ## Context

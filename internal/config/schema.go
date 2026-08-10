@@ -137,6 +137,14 @@ type rawProbeFile struct {
 	Probes []rawProbeConfig `yaml:"probes"`
 }
 
+// rawProbeFragment is the YAML shape of a probe file inside a probe config
+// directory. Global is a pointer purely to detect presence of the `global:` key,
+// which is rejected outside the reserved _global.yaml file.
+type rawProbeFragment struct {
+	Global *GlobalConfig    `yaml:"global"`
+	Probes []rawProbeConfig `yaml:"probes"`
+}
+
 // rawOpsFile is the YAML shape of the ops config file (--config flag).
 type rawOpsFile struct {
 	Exporters ExportersConfig `yaml:"exporters"`

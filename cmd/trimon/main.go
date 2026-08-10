@@ -39,7 +39,7 @@ var (
 
 func main() {
 	configPath := flag.String("config", "", "path to ops config file (exporters, server, pipeline)")
-	probesPath := flag.String("probes", "", "path to probe config file (targets, intervals, labels)")
+	probesPath := flag.String("probes", "", "path to probe config file or directory of *.yaml probe files")
 	logLevel := flag.String("log-level", "info", "log level: debug|info|warn|error")
 	logFormat := flag.String("log-format", "json", "log format: json|text")
 	flag.Parse()
@@ -63,7 +63,7 @@ func main() {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("config loaded", "config", *configPath, "probes", *probesPath, "sha256", cfg.SHA256)
+	logger.Info("config loaded", "config", *configPath, "probes", *probesPath, "probe_files", len(cfg.ProbeFiles), "sha256", cfg.SHA256)
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {
 		switch probeCfg.Type {
@@ -115,7 +115,7 @@ func main() {
 		sched.Reload(newCfg.Probes)
 		srv.UpdateConfig(newCfg)
 		exp.RecordConfigReload(context.Background())
-		logger.Info("config reloaded", "probes", len(newCfg.Probes), "sha256", newCfg.SHA256)
+		logger.Info("config reloaded", "probes", len(newCfg.Probes), "probe_files", len(newCfg.ProbeFiles), "sha256", newCfg.SHA256)
 		return newCfg, nil
 	})
 

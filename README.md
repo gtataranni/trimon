@@ -85,6 +85,38 @@ Both example files are annotated field-by-field and are the canonical reference 
 fields and probe types. See
 [ADR-0007](docs/adr/0007-two-config-files.md) for the two-file split and its rationale.
 
+### Splitting probes across files
+
+`--probes` may point at a **directory** instead of a file. Every `*.yaml` file directly
+inside it is merged, in lexical order, at startup and on every `POST /reload`:
+
+```
+probes.d/
+├── _global.yaml      # reserved: global defaults only
+├── core-sites.yaml   # probes:
+└── edge-sites.yaml   # probes:
+```
+
+```bash
+./bin/trimon --config config.example.yaml --probes ./probes.d
+```
+
+Rules:
+
+- Only `*.yaml` **directly inside** the directory is read — non-recursive; dotfiles,
+  subdirectories, and other extensions are ignored.
+- `global:` is allowed **only** in `_global.yaml`, and that file must not declare `probes:`.
+  Without `_global.yaml`, the built-in defaults apply (`probe_every: 30s`,
+  `packet_interval: 1s`, `timeout: 5s`, `count: 3`).
+- Probe names must be unique **across** all files.
+- A directory with no `*.yaml` files is an error.
+- Reload is all-or-nothing: any error in any file rejects the whole set and the daemon
+  keeps its previous config. The logged `sha256` covers file names and contents, so adds,
+  removes, and renames are all visible.
+- The ops config (`--config`) remains a single file.
+
+See [ADR-0008](docs/adr/0008-probe-config-directory.md) for the rationale.
+
 ---
 
 ## Metrics reference
