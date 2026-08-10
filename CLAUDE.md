@@ -77,7 +77,7 @@ make lint        # golangci-lint run
 make container   # build container image
 make release V=vX.Y.Z  # tag and build a release
 
-./bin/trimon --config config.example.yaml --probes ./probes.d --log-level debug
+./bin/trimon --config config.example.yaml --probes ./examples/probes.d --log-level debug
 ```
 
 After build, grant raw socket capability for local runs (Linux only):

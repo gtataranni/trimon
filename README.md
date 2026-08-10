@@ -69,7 +69,7 @@ See [examples/multiline-demo/](examples/multiline-demo/README.md) — the fastes
 ```bash
 make build
 sudo setcap cap_net_raw+ep ./bin/trimon
-./bin/trimon --config config.example.yaml --probes ./probes.d
+./bin/trimon --config config.example.yaml --probes ./examples/probes.d
 ```
 
 ---
@@ -79,7 +79,7 @@ sudo setcap cap_net_raw+ep ./bin/trimon
 trimon takes two config inputs:
 
 - **[config.example.yaml](config.example.yaml)** — ops config (`--config`): a single file holding exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
-- **[probes.d/](probes.d)** — probe config (`--probes`): a **directory** of `*.yaml` files holding global probe defaults and target lists. Safe to expose to unprivileged users; returned merged by `GET /config`.
+- **[examples/probes.d/](examples/probes.d)** — probe config (`--probes`): a **directory** of `*.yaml` files holding global probe defaults and target lists. Safe to expose to unprivileged users; returned merged by `GET /config`.
 
 Both examples are annotated field-by-field and are the canonical reference for probe
 fields and probe types. See
