@@ -1,8 +1,8 @@
 // Package config loads, validates, and merges trimon's two YAML configuration
-// files: the ops config (--config) and the probe config (--probes).
+// inputs: the ops config file (--config) and the probe config directory (--probes).
 //
 // The file is split by concern:
-//   - config.go     — entry points (Load/parse) and the merged Config struct
+//   - config.go     — entry points (Load/parseSources) and the merged Config struct
 //   - schema.go     — YAML shapes (public config structs + raw decode structs)
 //   - validate.go   — global/probe validation and the merge pipeline
 //   - protocols.go  — per-protocol (HTTP/TCP/UDP/DNS) config validation
@@ -29,15 +29,10 @@ import (
 const globalFileName = "_global.yaml"
 
 // probeSource is one probe config document plus the file name it came from.
-// A single source with an empty name means single-file mode (--probes points at
-// a plain file): globals and probes may share the document and the fingerprint
-// is the raw file bytes, preserving pre-directory behaviour.
 type probeSource struct {
 	name string
 	data []byte
 }
-
-func (s probeSource) isSingleFile() bool { return s.name == "" }
 
 // Config is the validated, merged configuration.
 type Config struct {
@@ -48,53 +43,37 @@ type Config struct {
 	Probes    []types.ProbeConfig
 	// ProbeFiles lists the probe config file names that were merged, in load order.
 	ProbeFiles []string
-	// SHA256 fingerprints the probe config. In single-file mode it is the SHA-256
-	// of the raw file bytes; in directory mode it covers the (name, content) pairs
-	// of every merged file, so adds, removes and renames all change it.
-	// It tracks the probe config only since that is the only part hot-reloaded.
+	// SHA256 fingerprints the probe config: it covers the (name, content) pairs of
+	// every merged file, so adds, removes and renames all change it. It tracks the
+	// probe config only since that is the only part hot-reloaded.
 	SHA256 string
 }
 
-// Load reads and validates the ops config at opsPath and the probe config at probePath.
-// probePath may be a plain file or a directory of *.yaml probe fragments that are merged.
+// Load reads and validates the ops config file at opsPath and the probe config
+// directory at probesDir, whose *.yaml files are merged into one probe set.
 //
 // Single-read semantics per file: each file is read exactly once into a byte buffer, then
 // parsed and validated without any further disk access. Do not introduce additional reads
 // of either path anywhere in this call chain.
-func Load(opsPath, probePath string) (*Config, error) {
+func Load(opsPath, probesDir string) (*Config, error) {
 	opsData, err := os.ReadFile(opsPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading ops config: %w", err)
 	}
 
-	info, err := os.Stat(probePath)
+	sources, err := readProbeDir(probesDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading probe config: %w", err)
-	}
-
-	var sources []probeSource
-	probeFiles := []string{filepath.Base(probePath)}
-	if info.IsDir() {
-		if sources, err = readProbeDir(probePath); err != nil {
-			return nil, err
-		}
-		probeFiles = make([]string, len(sources))
-		for i, s := range sources {
-			probeFiles[i] = s.name
-		}
-	} else {
-		probeData, readErr := os.ReadFile(probePath)
-		if readErr != nil {
-			return nil, fmt.Errorf("reading probe config: %w", readErr)
-		}
-		sources = []probeSource{{data: probeData}}
+		return nil, err
 	}
 
 	cfg, err := parseSources(opsData, sources)
 	if err != nil {
 		return nil, err
 	}
-	cfg.ProbeFiles = probeFiles
+	cfg.ProbeFiles = make([]string, len(sources))
+	for i, s := range sources {
+		cfg.ProbeFiles[i] = s.name
+	}
 	return cfg, nil
 }
 
@@ -124,12 +103,6 @@ func readProbeDir(dir string) ([]probeSource, error) {
 	return sources, nil
 }
 
-// parse parses a single-file probe config. It is the single-file entry point kept
-// for callers (and tests) that hold the probe document in memory.
-func parse(opsData, probeData []byte) (*Config, error) {
-	return parseSources(opsData, []probeSource{{data: probeData}})
-}
-
 func parseSources(opsData []byte, sources []probeSource) (*Config, error) {
 	ops, err := parseOpsFile(opsData)
 	if err != nil {
@@ -151,13 +124,9 @@ func parseSources(opsData []byte, sources []probeSource) (*Config, error) {
 	}, nil
 }
 
-// fingerprint hashes the probe config sources. Single-file mode hashes the raw bytes;
-// directory mode hashes the (name, content) pairs so renames are visible.
+// fingerprint hashes the (name, content) pairs of the probe config sources, so that
+// adding, removing or renaming a file changes the result.
 func fingerprint(sources []probeSource) string {
-	if len(sources) == 1 && sources[0].isSingleFile() {
-		sum := sha256.Sum256(sources[0].data)
-		return hex.EncodeToString(sum[:])
-	}
 	h := sha256.New()
 	for _, s := range sources {
 		h.Write([]byte(s.name))
@@ -209,24 +178,9 @@ func defaultGlobal() GlobalConfig {
 }
 
 // parseProbeSources merges the probe sources into one validated probe set.
-// In directory mode `global:` is only accepted in _global.yaml, which in turn must
-// not declare probes; probe names must be unique across all files.
+// `global:` is only accepted in _global.yaml, which in turn must not declare probes;
+// probe names must be unique across all files.
 func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig, error) {
-	if len(sources) == 1 && sources[0].isSingleFile() {
-		raw := rawProbeFile{Global: defaultGlobal()}
-		if err := yaml.Unmarshal(sources[0].data, &raw); err != nil {
-			return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML: %w", err)
-		}
-		if err := validateGlobal(raw.Global); err != nil {
-			return GlobalConfig{}, nil, err
-		}
-		probes, err := mergeAndValidateProbes(raw.Probes, raw.Global)
-		if err != nil {
-			return GlobalConfig{}, nil, err
-		}
-		return raw.Global, probes, nil
-	}
-
 	global := defaultGlobal()
 	type fragment struct {
 		file string

@@ -1,0 +1,21 @@
+# DNS probes: query a name and measure resolver round-trip time. An attempt is
+# received when the resolver answers before the timeout with NOERROR (or
+# NXDOMAIN when no expected_answer is set); a timeout, SERVFAIL/REFUSED, or an
+# answer that doesn't match expected_answer is loss (status=failure). Targets
+# are query names (not resolved at load time, so NXDOMAIN names are allowed).
+# Count/packet_interval control how many queries are made per tick.
+
+probes:
+  - name: dns-resolve-google
+    type: dns
+    targets:
+      - "dns.google"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 500ms
+    dns:
+      record_type: A
+      expected_answer:        # at least one must match (case-insensitive)
+        - "8.8.8.8"
+        - "8.8.4.4"

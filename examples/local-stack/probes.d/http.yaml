@@ -1,0 +1,20 @@
+# HTTP probe (v0.4.0): HTTPS GET against a stable public endpoint. Exercises
+# status-code matching, single-request duration (trimon_probe_duration_milliseconds),
+# and TLS certificate expiry (status=partial within tls_expiry_warning_days of
+# expiry, failure once expired). HTTP sends exactly one request per tick, so
+# count/packet_interval do not apply. Doubles as the runtime smoke for http.
+
+probes:
+  - name: http-example
+    type: http
+    targets:
+      - "example.com"
+    probe_every: 20s
+    timeout: 5s
+    http:
+      scheme: https
+      path: /
+      expected_status: 200
+      tls_expiry_warning_days: 14
+    labels:
+      probe_id: "http-example"

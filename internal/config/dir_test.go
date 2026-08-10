@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,21 +166,6 @@ func TestFingerprint(t *testing.T) {
 	}
 }
 
-func TestFingerprintSingleFileUnchanged(t *testing.T) {
-	// Guards the backward-compat carve-out: single-file mode hashes raw bytes.
-	cfg, err := parse([]byte(minValidOpsYAML), []byte(minValidProbeYAML))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cfg.SHA256) != 64 {
-		t.Fatalf("want 64-char hex sha256, got %q", cfg.SHA256)
-	}
-	sum := sha256.Sum256([]byte(minValidProbeYAML))
-	if cfg.SHA256 != hex.EncodeToString(sum[:]) {
-		t.Errorf("single-file sha256 must hash raw bytes, got %q", cfg.SHA256)
-	}
-}
-
 func writeFiles(t *testing.T, dir string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {
@@ -237,7 +220,7 @@ func TestReadProbeDirEmpty(t *testing.T) {
 	}
 }
 
-func TestLoadDirAndFile(t *testing.T) {
+func TestLoadDir(t *testing.T) {
 	dir := t.TempDir()
 	opsPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(opsPath, []byte(minValidOpsYAML), 0o644); err != nil {
@@ -258,24 +241,17 @@ func TestLoadDirAndFile(t *testing.T) {
 	if len(cfg.Probes) != 2 {
 		t.Fatalf("want 2 probes, got %d", len(cfg.Probes))
 	}
-	if len(cfg.ProbeFiles) != 3 {
-		t.Fatalf("want 3 probe files, got %v", cfg.ProbeFiles)
+	wantFiles := []string{globalFileName, "core.yaml", "edge.yaml"}
+	if len(cfg.ProbeFiles) != len(wantFiles) {
+		t.Fatalf("want %v, got %v", wantFiles, cfg.ProbeFiles)
+	}
+	for i, name := range wantFiles {
+		if cfg.ProbeFiles[i] != name {
+			t.Fatalf("want %v, got %v", wantFiles, cfg.ProbeFiles)
+		}
 	}
 	if cfg.Global.Interval != 20*time.Second {
 		t.Errorf("global probe_every: want 20s, got %v", cfg.Global.Interval)
-	}
-
-	// Regression: --probes pointing at a plain file still works.
-	filePath := filepath.Join(dir, "probes.yaml")
-	if err := os.WriteFile(filePath, []byte(minValidProbeYAML), 0o644); err != nil {
-		t.Fatalf("write probes: %v", err)
-	}
-	fileCfg, err := Load(opsPath, filePath)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(fileCfg.ProbeFiles) != 1 || fileCfg.ProbeFiles[0] != "probes.yaml" {
-		t.Errorf("want [probes.yaml], got %v", fileCfg.ProbeFiles)
 	}
 }
 

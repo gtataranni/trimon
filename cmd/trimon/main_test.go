@@ -93,36 +93,38 @@ server:
 
 	// Minimal probe config: one fast loopback probe, no source_ip (OS picks).
 	// Timings: packet_interval(100ms) * count(1) = 100ms < timeout(500ms) < probe_every(1s).
-	probeYAML := `
+	globalYAML := `
 global:
   probe_every: 1s
   packet_interval: 100ms
   timeout: 500ms
   count: 1
+`
 
+	probeYAML := `
 probes:
   - name: ping-loopback
     type: icmp
-    target: "127.0.0.1"
+    targets:
+      - "127.0.0.1"
 `
 
-	writeTemp := func(content string) string {
-		f, err := os.CreateTemp("", "trimon-smoke-*.yaml")
-		if err != nil {
-			t.Fatalf("CreateTemp: %v", err)
-		}
-		t.Cleanup(func() { os.Remove(f.Name()) })
-		if _, err := io.WriteString(f, content); err != nil {
-			t.Fatalf("write temp config: %v", err)
-		}
-		f.Close()
-		return f.Name()
+	opsFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(opsFile, []byte(opsYAML), 0o600); err != nil {
+		t.Fatalf("write ops config: %v", err)
 	}
 
-	opsFile := writeTemp(opsYAML)
-	probeFile := writeTemp(probeYAML)
+	probeDir := t.TempDir()
+	for name, content := range map[string]string{
+		"_global.yaml": globalYAML,
+		"probes.yaml":  probeYAML,
+	} {
+		if err := os.WriteFile(filepath.Join(probeDir, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
 
-	cfg, err := config.Load(opsFile, probeFile)
+	cfg, err := config.Load(opsFile, probeDir)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}

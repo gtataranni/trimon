@@ -62,10 +62,10 @@ services:
     container_name: multiline-trimon
     cap_add:
       - NET_RAW
-    command: ["--config", "/etc/trimon/config.yaml", "--probes", "/etc/trimon/probes.yaml"]
+    command: ["--config", "/etc/trimon/config.yaml", "--probes", "/etc/trimon/probes.d"]
     volumes:
       - ./config.yaml:/etc/trimon/config.yaml:ro
-      - ./probes.yaml:/etc/trimon/probes.yaml:ro
+      - ./probes.d:/etc/trimon/probes.d:ro
     ports:
       - "8081:8080"
     depends_on:

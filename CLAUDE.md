@@ -29,13 +29,13 @@ Do not add new dependencies without an explicit reason. Prefer the standard libr
 
 ## Architecture
 
-Pipeline: two config files (`--config` ops, `--probes` targets) → scheduler (one
-goroutine + ticker per probe) → probers (bind to `source_ip`) → buffered result channel →
+Pipeline: two config inputs (`--config` ops file, `--probes` targets directory) → scheduler
+(one goroutine + ticker per probe) → probers (bind to `source_ip`) → buffered result channel →
 exporters (stdout / OTLP + Prometheus bridge `/metrics`). See the [README diagram](README.md#how-it-works)
 for the canonical picture and the HTTP endpoints (`/healthz`, `/metrics`, `/config`, `/reload`).
 
-`--probes` also accepts a **directory** of `*.yaml` files merged at load/reload, with
-`global:` confined to a reserved `_global.yaml` — see [ADR-0008](docs/adr/0008-probe-config-directory.md).
+`--probes` is a **directory** of `*.yaml` files merged at load/reload, with `global:`
+confined to a reserved `_global.yaml` — see [ADR-0008](docs/adr/0008-probe-config-directory.md).
 
 ### Load-bearing abstractions
 
@@ -77,7 +77,7 @@ make lint        # golangci-lint run
 make container   # build container image
 make release V=vX.Y.Z  # tag and build a release
 
-./bin/trimon --config config.example.yaml --probes probes.example.yaml --log-level debug
+./bin/trimon --config config.example.yaml --probes ./probes.d --log-level debug
 ```
 
 After build, grant raw socket capability for local runs (Linux only):

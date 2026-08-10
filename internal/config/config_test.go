@@ -1,10 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/gtataranni/trimon/pkg/types"
 )
@@ -21,6 +24,40 @@ probes: []
 // minValidOpsYAML is the smallest ops config that passes all validators.
 // Empty bytes are also valid (all defaults apply), but this makes intent explicit.
 const minValidOpsYAML = ``
+
+// parse is a test helper that takes a combined `global:` + `probes:` document and
+// splits it into the reserved _global.yaml plus one probe fragment — the two-file
+// shape the loader requires — so the validation tables below can stay a single
+// readable YAML literal per case.
+func parse(opsData, probeData []byte) (*Config, error) {
+	var doc struct {
+		Global yaml.Node `yaml:"global"`
+		Probes yaml.Node `yaml:"probes"`
+	}
+	if err := yaml.Unmarshal(probeData, &doc); err != nil {
+		return nil, fmt.Errorf("parsing probe config YAML: %w", err)
+	}
+
+	var sources []probeSource
+	if doc.Global.Kind != 0 {
+		data, err := yaml.Marshal(map[string]*yaml.Node{"global": &doc.Global})
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, probeSource{name: globalFileName, data: data})
+	}
+	fragment := []byte("probes: []\n")
+	if doc.Probes.Kind != 0 {
+		data, err := yaml.Marshal(map[string]*yaml.Node{"probes": &doc.Probes})
+		if err != nil {
+			return nil, err
+		}
+		fragment = data
+	}
+	sources = append(sources, probeSource{name: "probes.yaml", data: fragment})
+
+	return parseSources(opsData, sources)
+}
 
 func TestParseValid(t *testing.T) {
 	probeYAML := `
@@ -688,21 +725,13 @@ exporters:
 server:
   listen: ":9191"
 `
-	probeContent := `
-global:
-  probe_every: 15s
-  timeout: 3s
-  count: 2
-probes:
-  - name: lo
-    type: icmp
-    targets:
-      - "127.0.0.1"
-`
 	opsFile := writeTempFile(t, opsContent)
-	probeFile := writeTempFile(t, probeContent)
+	probeDir := writeProbeDir(t, map[string]string{
+		globalFileName: "global:\n  probe_every: 15s\n  timeout: 3s\n  count: 2\n",
+		"probes.yaml":  "probes:\n  - name: lo\n    type: icmp\n    targets:\n      - \"127.0.0.1\"\n",
+	})
 
-	cfg, err := Load(opsFile, probeFile)
+	cfg, err := Load(opsFile, probeDir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -725,18 +754,19 @@ probes:
 }
 
 func TestLoadMissingOpsFile(t *testing.T) {
-	probeFile := writeTempFile(t, minValidProbeYAML)
-	_, err := Load("/nonexistent/ops.yaml", probeFile)
+	probeDir := writeProbeDir(t, map[string]string{"probes.yaml": "probes: []\n"})
+	_, err := Load("/nonexistent/ops.yaml", probeDir)
 	if err == nil {
 		t.Fatal("expected error for missing ops file, got nil")
 	}
 }
 
-func TestLoadMissingProbeFile(t *testing.T) {
+func TestLoadProbePathIsAFile(t *testing.T) {
 	opsFile := writeTempFile(t, minValidOpsYAML)
-	_, err := Load(opsFile, "/nonexistent/probes.yaml")
+	probeFile := writeTempFile(t, minValidProbeYAML)
+	_, err := Load(opsFile, probeFile)
 	if err == nil {
-		t.Fatal("expected error for missing probe file, got nil")
+		t.Fatal("expected error for --probes pointing at a plain file, got nil")
 	}
 }
 
@@ -748,24 +778,20 @@ exporters:
     # endpoint intentionally omitted — should fail validation
 `
 	opsFile := writeTempFile(t, opsContent)
-	probeFile := writeTempFile(t, minValidProbeYAML)
-	_, err := Load(opsFile, probeFile)
+	probeDir := writeProbeDir(t, map[string]string{"probes.yaml": "probes: []\n"})
+	_, err := Load(opsFile, probeDir)
 	if err == nil {
 		t.Fatal("expected error for invalid OTLP config, got nil")
 	}
 }
 
 func TestLoadInvalidProbeFile(t *testing.T) {
-	probeContent := `
-global:
-  probe_every: 5s
-  timeout: 10s
-  count: 3
-probes: []
-`
 	opsFile := writeTempFile(t, minValidOpsYAML)
-	probeFile := writeTempFile(t, probeContent)
-	_, err := Load(opsFile, probeFile)
+	probeDir := writeProbeDir(t, map[string]string{
+		globalFileName: "global:\n  probe_every: 5s\n  timeout: 10s\n  count: 3\n",
+		"probes.yaml":  "probes: []\n",
+	})
+	_, err := Load(opsFile, probeDir)
 	if err == nil {
 		t.Fatal("expected error for invalid probe timings (timeout >= probe_every), got nil")
 	}
@@ -1429,4 +1455,12 @@ func writeTempFile(t *testing.T, content string) string {
 	}
 	_ = f.Close()
 	return f.Name()
+}
+
+// writeProbeDir materialises a probe config directory from name → content pairs.
+func writeProbeDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFiles(t, dir, files)
+	return dir
 }

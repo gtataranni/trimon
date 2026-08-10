@@ -1,0 +1,37 @@
+# TCP probes. Count/packet_interval control how many attempts are made per tick.
+
+probes:
+  # Connect mode (the default): open a full connection to a port and measure the
+  # handshake time. A SYN/ACK (open) or a RST (closed) both count as the host
+  # being reachable; only a timeout is loss (status=failure). The
+  # trimon_probe_port_open metric (1=open, 0=closed/no-reply) tells open from closed.
+  - name: ssh-gateway
+    type: tcp
+    targets:
+      - "192.168.1.1"
+      - "github.com"   # FQDN: expands to all resolved IPs at probe time
+    probe_every: 30s
+    timeout: 5s
+    count: 3
+    packet_interval: 1s
+    tcp:
+      port: 22
+      mode: connect    # "connect" (default) or "syn"
+    labels:
+      service: ssh
+
+  # SYN mode: send a raw half-open SYN and classify the reply without completing
+  # the handshake — measures network round-trip and port reachability.
+  - name: https-reachability
+    type: tcp
+    targets:
+      - "1.1.1.1"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 500ms
+    tcp:
+      port: 443
+      mode: syn
+    labels:
+      service: https

@@ -1,0 +1,22 @@
+# DNS probe (v0.4.0): proper DNS query with answer validation and resolver RTT.
+# Queries a public resolver for dns.google's A records and asserts the answer
+# is one of Google's well-known IPs. Doubles as the runtime smoke for the dns
+# probe type.
+
+probes:
+  - name: dns-resolve
+    type: dns
+    targets:
+      - "dns.google"
+    probe_every: 20s
+    timeout: 2s
+    count: 3
+    packet_interval: 200ms
+    dns:
+      record_type: A
+      resolver: "1.1.1.1:53"
+      expected_answer:
+        - "8.8.8.8"
+        - "8.8.4.4"
+    labels:
+      probe_id: "dns-resolve"

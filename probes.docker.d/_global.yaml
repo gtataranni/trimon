@@ -1,0 +1,8 @@
+# Global probe defaults for container deployments.
+# Reserved file: only this one may carry `global:`, and it must not declare `probes:`.
+
+global:
+  probe_every: 30s
+  timeout: 5s
+  count: 3
+  source_ip: ""   # empty = use the container's default interface

@@ -39,7 +39,7 @@ docker compose up -d --build
 ## How it works
 
 ```
-config files (--config / --probes)
+config inputs (--config file / --probes dir)
     │
     ▼
 Scheduler  (one goroutine + ticker per probe)
@@ -69,26 +69,26 @@ See [examples/multiline-demo/](examples/multiline-demo/README.md) — the fastes
 ```bash
 make build
 sudo setcap cap_net_raw+ep ./bin/trimon
-./bin/trimon --config config.example.yaml --probes probes.example.yaml
+./bin/trimon --config config.example.yaml --probes ./probes.d
 ```
 
 ---
 
 ## Configuration reference
 
-trimon uses two config files:
+trimon takes two config inputs:
 
-- **[config.example.yaml](config.example.yaml)** — ops config (`--config`): exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
-- **[probes.example.yaml](probes.example.yaml)** — probe config (`--probes`): global probe defaults and target list. Safe to expose to unprivileged users; returned by `GET /config`.
+- **[config.example.yaml](config.example.yaml)** — ops config (`--config`): a single file holding exporters, server listen address, pipeline buffer. Intended for ops use; never exposed via HTTP.
+- **[probes.d/](probes.d)** — probe config (`--probes`): a **directory** of `*.yaml` files holding global probe defaults and target lists. Safe to expose to unprivileged users; returned merged by `GET /config`.
 
-Both example files are annotated field-by-field and are the canonical reference for probe
+Both examples are annotated field-by-field and are the canonical reference for probe
 fields and probe types. See
-[ADR-0007](docs/adr/0007-two-config-files.md) for the two-file split and its rationale.
+[ADR-0007](docs/adr/0007-two-config-files.md) for the two-input split and its rationale.
 
-### Splitting probes across files
+### The probe config directory
 
-`--probes` may point at a **directory** instead of a file. Every `*.yaml` file directly
-inside it is merged, in lexical order, at startup and on every `POST /reload`:
+`--probes` names a directory. Every `*.yaml` file directly inside it is merged, in lexical
+order, at startup and on every `POST /reload`:
 
 ```
 probes.d/
@@ -97,12 +97,10 @@ probes.d/
 └── edge-sites.yaml   # probes:
 ```
 
-```bash
-./bin/trimon --config config.example.yaml --probes ./probes.d
-```
-
 Rules:
 
+- `--probes` must be a directory — pointing it at a plain file is an error. A single-file
+  setup is just a directory with one `*.yaml` in it.
 - Only `*.yaml` **directly inside** the directory is read — non-recursive; dotfiles,
   subdirectories, and other extensions are ignored.
 - `global:` is allowed **only** in `_global.yaml`, and that file must not declare `probes:`.
