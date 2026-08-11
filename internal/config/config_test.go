@@ -37,26 +37,24 @@ func parse(opsData, probeData []byte) (*Config, error) {
 	if err := yaml.Unmarshal(probeData, &doc); err != nil {
 		return nil, fmt.Errorf("parsing probe config YAML: %w", err)
 	}
+	marshal := func(key string, n *yaml.Node) []byte {
+		data, err := yaml.Marshal(map[string]*yaml.Node{key: n})
+		if err != nil {
+			panic(err)
+		}
+		return data
+	}
 
 	var sources []probeSource
 	if doc.Global.Kind != 0 {
-		data, err := yaml.Marshal(map[string]*yaml.Node{"global": &doc.Global})
-		if err != nil {
-			return nil, err
-		}
-		sources = append(sources, probeSource{name: globalFileName, data: data})
+		sources = append(sources, probeSource{name: globalFileName, data: marshal("global", &doc.Global)})
 	}
 	fragment := []byte("probes: []\n")
 	if doc.Probes.Kind != 0 {
-		data, err := yaml.Marshal(map[string]*yaml.Node{"probes": &doc.Probes})
-		if err != nil {
-			return nil, err
-		}
-		fragment = data
+		fragment = marshal("probes", &doc.Probes)
 	}
-	sources = append(sources, probeSource{name: "probes.yaml", data: fragment})
 
-	return parseSources(opsData, sources)
+	return parseSources(opsData, append(sources, probeSource{name: "probes.yaml", data: fragment}))
 }
 
 func TestParseValid(t *testing.T) {

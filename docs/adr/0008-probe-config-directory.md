@@ -49,5 +49,5 @@ a case a one-file directory already covers.
 - `GET /config` output shape is unchanged — it still returns the merged effective probe
   config as one document. It is no longer directly re-usable as a directory entry, since
   it carries both `global:` and `probes:`; it must be split across `_global.yaml` and a
-  fragment to be fed back in. Provenance (`Config.ProbeFiles`) is logged, not served.
+  fragment to be fed back in. Per-file provenance is not exposed.
 - Recursive walking, glob patterns, and filesystem watching remain out of scope.

@@ -204,7 +204,7 @@ func TestReadProbeDir(t *testing.T) {
 		"sub/nested.yaml": "probes: []\n",
 	})
 
-	sources, skipped, err := readProbeDir(dir)
+	sources, err := readProbeDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,24 +221,15 @@ func TestReadProbeDir(t *testing.T) {
 			t.Fatalf("want %v, got %v", want, got)
 		}
 	}
-	wantSkipped := []string{".hidden.yaml", "ignored.txt", "ignored.yml", "sub"}
-	if len(skipped) != len(wantSkipped) {
-		t.Fatalf("skipped: want %v, got %v", wantSkipped, skipped)
-	}
-	for i := range wantSkipped {
-		if skipped[i] != wantSkipped[i] {
-			t.Fatalf("skipped: want %v, got %v", wantSkipped, skipped)
-		}
-	}
 }
 
 func TestReadProbeDirEmpty(t *testing.T) {
 	dir := t.TempDir()
-	if _, _, err := readProbeDir(dir); err == nil {
+	if _, err := readProbeDir(dir); err == nil {
 		t.Fatal("expected error for empty dir, got nil")
 	}
 	writeFiles(t, dir, map[string]string{"only.txt": "nope\n"})
-	if _, _, err := readProbeDir(dir); err == nil {
+	if _, err := readProbeDir(dir); err == nil {
 		t.Fatal("expected error for dir with no *.yaml files, got nil")
 	}
 }
@@ -263,15 +254,6 @@ func TestLoadDir(t *testing.T) {
 	}
 	if len(cfg.Probes) != 2 {
 		t.Fatalf("want 2 probes, got %d", len(cfg.Probes))
-	}
-	wantFiles := []string{globalFileName, "core.yaml", "edge.yaml"}
-	if len(cfg.ProbeFiles) != len(wantFiles) {
-		t.Fatalf("want %v, got %v", wantFiles, cfg.ProbeFiles)
-	}
-	for i, name := range wantFiles {
-		if cfg.ProbeFiles[i] != name {
-			t.Fatalf("want %v, got %v", wantFiles, cfg.ProbeFiles)
-		}
 	}
 	if cfg.Global.Interval != 20*time.Second {
 		t.Errorf("global probe_every: want 20s, got %v", cfg.Global.Interval)

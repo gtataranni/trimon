@@ -63,10 +63,7 @@ func main() {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("config loaded", "config", *configPath, "probes", *probesPath, "probe_files", len(cfg.ProbeFiles), "sha256", cfg.SHA256)
-	if len(cfg.SkippedFiles) > 0 {
-		logger.Warn("probe config entries ignored", "probes", *probesPath, "skipped", cfg.SkippedFiles)
-	}
+	logger.Info("config loaded", "config", *configPath, "probes", *probesPath, "sha256", cfg.SHA256)
 
 	probeFactory := func(probeCfg types.ProbeConfig) (probe.Prober, error) {
 		switch probeCfg.Type {
@@ -118,10 +115,7 @@ func main() {
 		sched.Reload(newCfg.Probes)
 		srv.UpdateConfig(newCfg)
 		exp.RecordConfigReload(context.Background())
-		logger.Info("config reloaded", "probes", len(newCfg.Probes), "probe_files", len(newCfg.ProbeFiles), "sha256", newCfg.SHA256)
-		if len(newCfg.SkippedFiles) > 0 {
-			logger.Warn("probe config entries ignored", "probes", *probesPath, "skipped", newCfg.SkippedFiles)
-		}
+		logger.Info("config reloaded", "probes", len(newCfg.Probes), "sha256", newCfg.SHA256)
 		return newCfg, nil
 	})
 

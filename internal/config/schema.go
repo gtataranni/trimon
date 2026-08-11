@@ -131,17 +131,10 @@ type rawProbeConfig struct {
 	DNS            *rawDNSConfig     `yaml:"dns"`
 }
 
-// rawProbeFile is the YAML shape of the reserved _global.yaml file. Probes is
-// decoded only to reject a stray `probes:` key, which belongs in a fragment.
+// rawProbeFile is the YAML shape of a file inside the probe config directory.
+// Global is a pointer so its presence can be detected: it is only allowed in the
+// reserved _global.yaml, which in turn must not carry Probes.
 type rawProbeFile struct {
-	Global GlobalConfig     `yaml:"global"`
-	Probes []rawProbeConfig `yaml:"probes"`
-}
-
-// rawProbeFragment is the YAML shape of every other probe file inside the probe
-// config directory. Global is a pointer purely to detect presence of the `global:`
-// key, which is rejected outside the reserved _global.yaml file.
-type rawProbeFragment struct {
 	Global *GlobalConfig    `yaml:"global"`
 	Probes []rawProbeConfig `yaml:"probes"`
 }

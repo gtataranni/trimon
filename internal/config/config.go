@@ -41,11 +41,6 @@ type Config struct {
 	Server    ServerConfig
 	Pipeline  PipelineConfig
 	Probes    []types.ProbeConfig
-	// ProbeFiles lists the probe config file names that were merged, in load order.
-	ProbeFiles []string
-	// SkippedFiles lists the directory entries that were not merged: dotfiles,
-	// subdirectories and non-*.yaml extensions.
-	SkippedFiles []string
 	// SHA256 fingerprints the probe config: it covers the (name, content) pairs of
 	// every merged file, so adds, removes and renames all change it. It tracks the
 	// probe config only since that is the only part hot-reloaded.
@@ -64,48 +59,39 @@ func Load(opsPath, probesDir string) (*Config, error) {
 		return nil, fmt.Errorf("reading ops config: %w", err)
 	}
 
-	sources, skipped, err := readProbeDir(probesDir)
+	sources, err := readProbeDir(probesDir)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg, err := parseSources(opsData, sources)
-	if err != nil {
-		return nil, err
-	}
-	cfg.ProbeFiles = make([]string, len(sources))
-	for i, s := range sources {
-		cfg.ProbeFiles[i] = s.name
-	}
-	cfg.SkippedFiles = skipped
-	return cfg, nil
+	return parseSources(opsData, sources)
 }
 
-// readProbeDir reads every *.yaml file directly inside dir, in lexical order, and
-// returns the skipped entries (dotfiles, subdirectories, other extensions) alongside
-// them so callers can log what was ignored. An empty result is an error.
-func readProbeDir(dir string) (sources []probeSource, skipped []string, err error) {
+// readProbeDir reads every *.yaml file directly inside dir, in lexical order,
+// silently ignoring dotfiles, subdirectories and other extensions. An empty result
+// is an error.
+func readProbeDir(dir string) ([]probeSource, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading probe config dir %s: %w", dir, err)
+		return nil, fmt.Errorf("reading probe config dir %s: %w", dir, err)
 	}
 
+	var sources []probeSource
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || strings.HasPrefix(name, ".") || filepath.Ext(name) != ".yaml" {
-			skipped = append(skipped, name)
 			continue
 		}
-		data, readErr := os.ReadFile(filepath.Join(dir, name))
-		if readErr != nil {
-			return nil, nil, fmt.Errorf("reading probe config file %s: %w", filepath.Join(dir, name), readErr)
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("reading probe config file %s: %w", filepath.Join(dir, name), err)
 		}
 		sources = append(sources, probeSource{name: name, data: data})
 	}
 	if len(sources) == 0 {
-		return nil, nil, fmt.Errorf("reading probe config dir %s: no *.yaml files found", dir)
+		return nil, fmt.Errorf("reading probe config dir %s: no *.yaml files found", dir)
 	}
-	return sources, skipped, nil
+	return sources, nil
 }
 
 func parseSources(opsData []byte, sources []probeSource) (*Config, error) {
@@ -172,21 +158,16 @@ func parseOpsFile(data []byte) (*rawOpsFile, error) {
 	return &raw, nil
 }
 
-// defaultGlobal returns the built-in probe defaults applied before any YAML is read.
-func defaultGlobal() GlobalConfig {
-	return GlobalConfig{
+// parseProbeSources merges the probe sources into one validated probe set.
+// `global:` is only accepted in _global.yaml, which in turn must not declare probes;
+// probe names must be unique across all files.
+func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig, error) {
+	global := GlobalConfig{
 		Interval:       30 * time.Second,
 		PacketInterval: 1 * time.Second,
 		Timeout:        5 * time.Second,
 		Count:          3,
 	}
-}
-
-// parseProbeSources merges the probe sources into one validated probe set.
-// `global:` is only accepted in _global.yaml, which in turn must not declare probes;
-// probe names must be unique across all files.
-func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig, error) {
-	global := defaultGlobal()
 	type fragment struct {
 		file string
 		raws []rawProbeConfig
@@ -194,51 +175,44 @@ func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig
 	var fragments []fragment
 
 	for _, s := range sources {
+		var raw rawProbeFile
 		if s.name == globalFileName {
-			raw := rawProbeFile{Global: global}
-			if err := yaml.Unmarshal(s.data, &raw); err != nil {
-				return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML in %s: %w", s.name, err)
-			}
+			// Decode onto a copy of the defaults so absent keys keep them.
+			defaults := global
+			raw.Global = &defaults
+		}
+		if err := yaml.Unmarshal(s.data, &raw); err != nil {
+			return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML in %s: %w", s.name, err)
+		}
+		if s.name == globalFileName {
 			if raw.Probes != nil {
 				return GlobalConfig{}, nil, fmt.Errorf("%s must not contain a probes: key", s.name)
 			}
-			global = raw.Global
+			global = *raw.Global
 			continue
 		}
-
-		var frag rawProbeFragment
-		if err := yaml.Unmarshal(s.data, &frag); err != nil {
-			return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML in %s: %w", s.name, err)
-		}
-		if frag.Global != nil {
+		if raw.Global != nil {
 			return GlobalConfig{}, nil, fmt.Errorf("%s: global: is only allowed in %s", s.name, globalFileName)
 		}
-		fragments = append(fragments, fragment{file: s.name, raws: frag.Probes})
+		fragments = append(fragments, fragment{file: s.name, raws: raw.Probes})
 	}
 
 	if err := validateGlobal(global); err != nil {
 		return GlobalConfig{}, nil, err
 	}
 
-	origin := make(map[string]string)
-	for _, f := range fragments {
-		for _, r := range f.raws {
-			if r.Name == "" {
-				continue // reported by mergeAndValidateProbes with its index
-			}
-			// Same-file duplicates are left to mergeAndValidateProbes, which words them better.
-			if prev, ok := origin[r.Name]; ok && prev != f.file {
-				return GlobalConfig{}, nil, fmt.Errorf("probe name %q defined in both %s and %s", r.Name, prev, f.file)
-			}
-			origin[r.Name] = f.file
-		}
-	}
-
 	var probes []types.ProbeConfig
+	origin := make(map[string]string)
 	for _, f := range fragments {
 		pcs, err := mergeAndValidateProbes(f.raws, global)
 		if err != nil {
 			return GlobalConfig{}, nil, fmt.Errorf("%s: %w", f.file, err)
+		}
+		for _, pc := range pcs {
+			if prev, ok := origin[pc.Name]; ok {
+				return GlobalConfig{}, nil, fmt.Errorf("probe name %q defined in both %s and %s", pc.Name, prev, f.file)
+			}
+			origin[pc.Name] = f.file
 		}
 		probes = append(probes, pcs...)
 	}
