@@ -1,0 +1,21 @@
+# TCP probe (v0.4.0): connect-mode handshake against a reliably-open public
+# port (HTTPS/443 on the public resolvers). trimon_probe_port_open=1 means open
+# (SYN/ACK or completed connect); a RST would be port_open=0 with up=1 (host
+# reachable, port closed); only a timeout is loss (status=failure, up=0).
+# Doubles as the runtime smoke for the tcp probe type.
+
+probes:
+  - name: tcp-https
+    type: tcp
+    targets:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    probe_every: 20s
+    timeout: 2s
+    count: 3
+    packet_interval: 200ms
+    tcp:
+      port: 443
+      mode: connect
+    labels:
+      probe_id: "tcp-https"

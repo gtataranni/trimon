@@ -39,7 +39,7 @@ var (
 
 func main() {
 	configPath := flag.String("config", "", "path to ops config file (exporters, server, pipeline)")
-	probesPath := flag.String("probes", "", "path to probe config file (targets, intervals, labels)")
+	probesPath := flag.String("probes", "", "path to probe config directory of *.yaml probe files")
 	logLevel := flag.String("log-level", "info", "log level: debug|info|warn|error")
 	logFormat := flag.String("log-format", "json", "log format: json|text")
 	flag.Parse()

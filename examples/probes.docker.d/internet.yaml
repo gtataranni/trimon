@@ -1,0 +1,12 @@
+# Example probe config for container deployments, passed via --probes as a directory.
+
+probes:
+  - name: internet
+    type: icmp
+    targets:
+      - "dns.google"
+      - "1.1.1.1"
+    timeout: 11s
+    count: 10
+    labels:
+      probe_id: "wan0"

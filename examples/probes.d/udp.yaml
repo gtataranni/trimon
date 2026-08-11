@@ -1,0 +1,43 @@
+# UDP probes: send bytes to a port and wait for a reply within the timeout.
+# UDP has no handshake, so reachability is tri-state (like TCP), via the
+# trimon_probe_port_open metric: a (matching) reply = OPEN (port_open=1); an
+# ICMP port-unreachable = CLOSED (host reachable, port shut — counts as a reply,
+# status=success, port_open=0); only silence (timeout) is loss (status=failure,
+# up=0). Silence can't tell a quietly-open service from a dropped packet — UDP's
+# inherent open|filtered ambiguity. payload and expected_response are raw byte
+# strings — use YAML \xNN escapes for binary (e.g. "\x00\x01"); expected_response,
+# if set, must be a prefix of the reply and requires a payload. Count/packet_interval
+# control how many attempts are made per tick.
+
+probes:
+  - name: udp-echo
+    type: udp
+    targets:
+      - "192.168.1.50"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 500ms
+    udp:
+      port: 7                   # echo service: replies with whatever we send
+      payload: "trimon-ping"
+      expected_response: "trimon-ping"
+    labels:
+      service: echo
+
+  # A custom application health port that answers "PONG" to "PING".
+  # Any reply starting with the expected bytes within the timeout = success.
+  - name: app-udp-health
+    type: udp
+    targets:
+      - "10.0.0.20"
+    probe_every: 30s
+    timeout: 2s
+    count: 3
+    packet_interval: 500ms
+    udp:
+      port: 9000
+      payload: "PING\n"
+      expected_response: "PONG"
+    labels:
+      service: app-health

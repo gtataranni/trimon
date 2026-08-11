@@ -1,8 +1,8 @@
 // Package config loads, validates, and merges trimon's two YAML configuration
-// files: the ops config (--config) and the probe config (--probes).
+// inputs: the ops config file (--config) and the probe config directory (--probes).
 //
 // The file is split by concern:
-//   - config.go     — entry points (Load/parse) and the merged Config struct
+//   - config.go     — entry points (Load/parseSources) and the merged Config struct
 //   - schema.go     — YAML shapes (public config structs + raw decode structs)
 //   - validate.go   — global/probe validation and the merge pipeline
 //   - protocols.go  — per-protocol (HTTP/TCP/UDP/DNS) config validation
@@ -14,12 +14,25 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/gtataranni/trimon/pkg/types"
 )
+
+// globalFileName is the reserved file inside a probe config directory that may
+// carry the `global:` key. No other file in the directory may define globals,
+// and this file must not define probes.
+const globalFileName = "_global.yaml"
+
+// probeSource is one probe config document plus the file name it came from.
+type probeSource struct {
+	name string
+	data []byte
+}
 
 // Config is the validated, merged configuration.
 type Config struct {
@@ -28,40 +41,69 @@ type Config struct {
 	Server    ServerConfig
 	Pipeline  PipelineConfig
 	Probes    []types.ProbeConfig
-	// SHA256 is the hex-encoded SHA-256 of the raw probe config file bytes.
-	// It tracks the probe file only since that is the only file hot-reloaded.
+	// SHA256 fingerprints the probe config: it covers the (name, content) pairs of
+	// every merged file, so adds, removes and renames all change it. It tracks the
+	// probe config only since that is the only part hot-reloaded.
 	SHA256 string
 }
 
-// Load reads and validates the ops config at opsPath and the probe config at probePath.
+// Load reads and validates the ops config file at opsPath and the probe config
+// directory at probesDir, whose *.yaml files are merged into one probe set.
 //
 // Single-read semantics per file: each file is read exactly once into a byte buffer, then
 // parsed and validated without any further disk access. Do not introduce additional reads
 // of either path anywhere in this call chain.
-func Load(opsPath, probePath string) (*Config, error) {
+func Load(opsPath, probesDir string) (*Config, error) {
 	opsData, err := os.ReadFile(opsPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading ops config: %w", err)
 	}
-	probeData, err := os.ReadFile(probePath)
+
+	sources, err := readProbeDir(probesDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading probe config: %w", err)
+		return nil, err
 	}
-	return parse(opsData, probeData)
+
+	return parseSources(opsData, sources)
 }
 
-func parse(opsData, probeData []byte) (*Config, error) {
+// readProbeDir reads every *.yaml file directly inside dir, in lexical order,
+// silently ignoring dotfiles, subdirectories and other extensions. An empty result
+// is an error.
+func readProbeDir(dir string) ([]probeSource, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading probe config dir %s: %w", dir, err)
+	}
+
+	var sources []probeSource
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || strings.HasPrefix(name, ".") || filepath.Ext(name) != ".yaml" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("reading probe config file %s: %w", filepath.Join(dir, name), err)
+		}
+		sources = append(sources, probeSource{name: name, data: data})
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("reading probe config dir %s: no *.yaml files found", dir)
+	}
+	return sources, nil
+}
+
+func parseSources(opsData []byte, sources []probeSource) (*Config, error) {
 	ops, err := parseOpsFile(opsData)
 	if err != nil {
 		return nil, err
 	}
 
-	global, probes, err := parseProbeFile(probeData)
+	global, probes, err := parseProbeSources(sources)
 	if err != nil {
 		return nil, err
 	}
-
-	sum := sha256.Sum256(probeData)
 
 	return &Config{
 		Global:    global,
@@ -69,8 +111,21 @@ func parse(opsData, probeData []byte) (*Config, error) {
 		Server:    ops.Server,
 		Pipeline:  ops.Pipeline,
 		Probes:    probes,
-		SHA256:    hex.EncodeToString(sum[:]),
+		SHA256:    fingerprint(sources),
 	}, nil
+}
+
+// fingerprint hashes the (name, content) pairs of the probe config sources, so that
+// adding, removing or renaming a file changes the result.
+func fingerprint(sources []probeSource) string {
+	h := sha256.New()
+	for _, s := range sources {
+		h.Write([]byte(s.name))
+		h.Write([]byte{0})
+		h.Write(s.data)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func parseOpsFile(data []byte) (*rawOpsFile, error) {
@@ -103,26 +158,64 @@ func parseOpsFile(data []byte) (*rawOpsFile, error) {
 	return &raw, nil
 }
 
-func parseProbeFile(data []byte) (GlobalConfig, []types.ProbeConfig, error) {
-	var raw rawProbeFile
+// parseProbeSources merges the probe sources into one validated probe set.
+// `global:` is only accepted in _global.yaml, which in turn must not declare probes;
+// probe names must be unique across all files.
+func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig, error) {
+	global := GlobalConfig{
+		Interval:       30 * time.Second,
+		PacketInterval: 1 * time.Second,
+		Timeout:        5 * time.Second,
+		Count:          3,
+	}
+	type fragment struct {
+		file string
+		raws []rawProbeConfig
+	}
+	var fragments []fragment
 
-	raw.Global.Interval = 30 * time.Second
-	raw.Global.PacketInterval = 1 * time.Second
-	raw.Global.Timeout = 5 * time.Second
-	raw.Global.Count = 3
-
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML: %w", err)
+	for _, s := range sources {
+		var raw rawProbeFile
+		if s.name == globalFileName {
+			// Decode onto a copy of the defaults so absent keys keep them.
+			defaults := global
+			raw.Global = &defaults
+		}
+		if err := yaml.Unmarshal(s.data, &raw); err != nil {
+			return GlobalConfig{}, nil, fmt.Errorf("parsing probe config YAML in %s: %w", s.name, err)
+		}
+		if s.name == globalFileName {
+			if raw.Probes != nil {
+				return GlobalConfig{}, nil, fmt.Errorf("%s must not contain a probes: key", s.name)
+			}
+			global = *raw.Global
+			continue
+		}
+		if raw.Global != nil {
+			return GlobalConfig{}, nil, fmt.Errorf("%s: global: is only allowed in %s", s.name, globalFileName)
+		}
+		fragments = append(fragments, fragment{file: s.name, raws: raw.Probes})
 	}
 
-	if err := validateGlobal(raw.Global); err != nil {
+	if err := validateGlobal(global); err != nil {
 		return GlobalConfig{}, nil, err
 	}
 
-	probes, err := mergeAndValidateProbes(raw.Probes, raw.Global)
-	if err != nil {
-		return GlobalConfig{}, nil, err
+	var probes []types.ProbeConfig
+	origin := make(map[string]string)
+	for _, f := range fragments {
+		pcs, err := mergeAndValidateProbes(f.raws, global)
+		if err != nil {
+			return GlobalConfig{}, nil, fmt.Errorf("%s: %w", f.file, err)
+		}
+		for _, pc := range pcs {
+			if prev, ok := origin[pc.Name]; ok {
+				return GlobalConfig{}, nil, fmt.Errorf("probe name %q defined in both %s and %s", pc.Name, prev, f.file)
+			}
+			origin[pc.Name] = f.file
+		}
+		probes = append(probes, pcs...)
 	}
 
-	return raw.Global, probes, nil
+	return global, probes, nil
 }

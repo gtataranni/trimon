@@ -1,0 +1,10 @@
+# Reserved file of the probe config directory, passed via --probes.
+# Only this file may carry `global:`, and it must not declare `probes:`.
+# If it is absent the built-in defaults apply
+# (probe_every: 30s, packet_interval: 1s, timeout: 5s, count: 3).
+
+global:
+  probe_every: 30s   # default probe interval
+  timeout: 5s        # default probe timeout
+  count: 3           # default ICMP echo count
+  source_ip: ""      # set a daemon-wide source IP or override per probe

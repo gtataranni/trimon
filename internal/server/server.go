@@ -171,8 +171,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 // ── config dump DTO ───────────────────────────────────────────────────────────
 //
-// Durations are serialised as strings ("10s") so the output is human-readable
-// and round-trips back to a valid probe config file.
+// Durations are serialised as strings ("10s") so the output is human-readable and
+// mirrors probe config syntax. The dump is the *merged effective* probe config, so it
+// carries both `global:` and `probes:` in one document — split it across `_global.yaml`
+// and a fragment to feed it back in as a probe config directory (see ADR-0008).
 // Ops fields (exporters, server, pipeline) are intentionally omitted.
 
 type configDump struct {

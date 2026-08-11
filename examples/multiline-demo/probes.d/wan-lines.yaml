@@ -1,9 +1,3 @@
-global:
-  probe_every: 15s
-  timeout: 6s
-  count: 5
-  source_ip: ""
-
 probes:
   - name: fiber-internet-gw
     type: icmp
@@ -39,25 +33,3 @@ probes:
       wan_line: vsat
       provider: vsat-provider
       target_type: internet_gateway
-
-  - name: critical-dc
-    type: icmp
-    targets:
-      - "172.23.0.10"
-    source_ip: "172.23.0.2"
-    count: 3
-    probe_every: 10s
-    labels:
-      target_type: corp_dc
-      priority: critical
-
-  - name: critical-dns
-    type: icmp
-    targets:
-      - "172.23.0.20"
-    source_ip: "172.23.0.2"
-    count: 3
-    probe_every: 10s
-    labels:
-      target_type: corp_dns
-      priority: critical

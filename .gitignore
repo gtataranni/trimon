@@ -32,3 +32,6 @@ go.work.sum
 .future/
 commit-message.txt
 *.code-workspace
+
+# Others
+docs/plans/

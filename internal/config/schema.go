@@ -131,9 +131,11 @@ type rawProbeConfig struct {
 	DNS            *rawDNSConfig     `yaml:"dns"`
 }
 
-// rawProbeFile is the YAML shape of the probe config file (--probes flag).
+// rawProbeFile is the YAML shape of a file inside the probe config directory.
+// Global is a pointer so its presence can be detected: it is only allowed in the
+// reserved _global.yaml, which in turn must not carry Probes.
 type rawProbeFile struct {
-	Global GlobalConfig     `yaml:"global"`
+	Global *GlobalConfig    `yaml:"global"`
 	Probes []rawProbeConfig `yaml:"probes"`
 }
 
