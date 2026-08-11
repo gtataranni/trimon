@@ -72,6 +72,13 @@ func TestParseSourcesGlobalFile(t *testing.T) {
 	if cfg.Probes[0].Count != 2 {
 		t.Errorf("probe count: want 2, got %d", cfg.Probes[0].Count)
 	}
+	// packet_interval is absent from _global.yaml, so the built-in default must survive.
+	if cfg.Global.PacketInterval != 1*time.Second {
+		t.Errorf("global packet_interval: want 1s, got %v", cfg.Global.PacketInterval)
+	}
+	if cfg.Probes[0].PacketInterval != 1*time.Second {
+		t.Errorf("probe packet_interval: want 1s, got %v", cfg.Probes[0].PacketInterval)
+	}
 }
 
 func TestParseSourcesDefaultsWithoutGlobalFile(t *testing.T) {
@@ -116,6 +123,13 @@ func TestParseSourcesErrors(t *testing.T) {
 				src("b.yaml", "probes:\n  - name: dup\n    type: icmp\n    targets: [\"127.0.0.2\"]\n"),
 			},
 			wantErr: `probe name "dup" defined in both a.yaml and b.yaml`,
+		},
+		{
+			name: "duplicate probe name within one file",
+			sources: []probeSource{
+				src("a.yaml", "probes:\n  - name: dup\n    type: icmp\n    targets: [\"127.0.0.1\"]\n  - name: dup\n    type: icmp\n    targets: [\"127.0.0.2\"]\n"),
+			},
+			wantErr: `a.yaml: probe name "dup" is not unique`,
 		},
 		{
 			name: "invalid probe names its file",
@@ -190,7 +204,7 @@ func TestReadProbeDir(t *testing.T) {
 		"sub/nested.yaml": "probes: []\n",
 	})
 
-	sources, err := readProbeDir(dir)
+	sources, skipped, err := readProbeDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,15 +221,24 @@ func TestReadProbeDir(t *testing.T) {
 			t.Fatalf("want %v, got %v", want, got)
 		}
 	}
+	wantSkipped := []string{".hidden.yaml", "ignored.txt", "ignored.yml", "sub"}
+	if len(skipped) != len(wantSkipped) {
+		t.Fatalf("skipped: want %v, got %v", wantSkipped, skipped)
+	}
+	for i := range wantSkipped {
+		if skipped[i] != wantSkipped[i] {
+			t.Fatalf("skipped: want %v, got %v", wantSkipped, skipped)
+		}
+	}
 }
 
 func TestReadProbeDirEmpty(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := readProbeDir(dir); err == nil {
+	if _, _, err := readProbeDir(dir); err == nil {
 		t.Fatal("expected error for empty dir, got nil")
 	}
 	writeFiles(t, dir, map[string]string{"only.txt": "nope\n"})
-	if _, err := readProbeDir(dir); err == nil {
+	if _, _, err := readProbeDir(dir); err == nil {
 		t.Fatal("expected error for dir with no *.yaml files, got nil")
 	}
 }

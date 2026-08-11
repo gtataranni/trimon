@@ -43,6 +43,9 @@ type Config struct {
 	Probes    []types.ProbeConfig
 	// ProbeFiles lists the probe config file names that were merged, in load order.
 	ProbeFiles []string
+	// SkippedFiles lists the directory entries that were not merged: dotfiles,
+	// subdirectories and non-*.yaml extensions.
+	SkippedFiles []string
 	// SHA256 fingerprints the probe config: it covers the (name, content) pairs of
 	// every merged file, so adds, removes and renames all change it. It tracks the
 	// probe config only since that is the only part hot-reloaded.
@@ -61,7 +64,7 @@ func Load(opsPath, probesDir string) (*Config, error) {
 		return nil, fmt.Errorf("reading ops config: %w", err)
 	}
 
-	sources, err := readProbeDir(probesDir)
+	sources, skipped, err := readProbeDir(probesDir)
 	if err != nil {
 		return nil, err
 	}
@@ -74,33 +77,35 @@ func Load(opsPath, probesDir string) (*Config, error) {
 	for i, s := range sources {
 		cfg.ProbeFiles[i] = s.name
 	}
+	cfg.SkippedFiles = skipped
 	return cfg, nil
 }
 
-// readProbeDir reads every *.yaml file directly inside dir, in lexical order.
-// Dotfiles, subdirectories and other extensions are skipped; an empty result is an error.
-func readProbeDir(dir string) ([]probeSource, error) {
+// readProbeDir reads every *.yaml file directly inside dir, in lexical order, and
+// returns the skipped entries (dotfiles, subdirectories, other extensions) alongside
+// them so callers can log what was ignored. An empty result is an error.
+func readProbeDir(dir string) (sources []probeSource, skipped []string, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading probe config dir %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("reading probe config dir %s: %w", dir, err)
 	}
 
-	var sources []probeSource
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || strings.HasPrefix(name, ".") || filepath.Ext(name) != ".yaml" {
+			skipped = append(skipped, name)
 			continue
 		}
 		data, readErr := os.ReadFile(filepath.Join(dir, name))
 		if readErr != nil {
-			return nil, fmt.Errorf("reading probe config dir %s: %w", dir, readErr)
+			return nil, nil, fmt.Errorf("reading probe config file %s: %w", filepath.Join(dir, name), readErr)
 		}
 		sources = append(sources, probeSource{name: name, data: data})
 	}
 	if len(sources) == 0 {
-		return nil, fmt.Errorf("reading probe config dir %s: no *.yaml files found", dir)
+		return nil, nil, fmt.Errorf("reading probe config dir %s: no *.yaml files found", dir)
 	}
-	return sources, nil
+	return sources, skipped, nil
 }
 
 func parseSources(opsData []byte, sources []probeSource) (*Config, error) {
@@ -221,7 +226,8 @@ func parseProbeSources(sources []probeSource) (GlobalConfig, []types.ProbeConfig
 			if r.Name == "" {
 				continue // reported by mergeAndValidateProbes with its index
 			}
-			if prev, ok := origin[r.Name]; ok {
+			// Same-file duplicates are left to mergeAndValidateProbes, which words them better.
+			if prev, ok := origin[r.Name]; ok && prev != f.file {
 				return GlobalConfig{}, nil, fmt.Errorf("probe name %q defined in both %s and %s", r.Name, prev, f.file)
 			}
 			origin[r.Name] = f.file
